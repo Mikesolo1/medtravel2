@@ -231,6 +231,7 @@
                         <div class="admin-card__title" style="margin-bottom:0;"><i class="fas fa-list"></i> Список врачей</div>
                         <div style="display:flex;gap:8px;flex-wrap:wrap;">
                             <button class="btn btn--secondary btn--sm" onclick="refreshDoctorProfileStatuses(true)"><i class="fas fa-link"></i> Проверить SEO-страницы</button>
+                            <button class="btn btn--secondary btn--sm" onclick="bulkPublishFallbackDoctorPages()"><i class="fas fa-file-zipper"></i> Скачать SEO для fallback</button>
                             <button class="btn btn--secondary btn--sm" onclick="runIntegrationChecks()"><i class="fas fa-vial-circle-check"></i> Тест-баги интеграций</button>
                             <button class="btn btn--primary btn--sm" onclick="openDoctorForm()"><i class="fas fa-plus"></i> Добавить врача</button>
                         </div>
@@ -700,6 +701,18 @@
         return fileName;
     }
 
+    function downloadTextFile(fileName, content) {
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
     async function publishDoctorStaticPageById(id) {
         const doctor = doctorsList.find(d => d.id === id);
         if (!doctor) {
@@ -713,6 +726,55 @@
             showToast(`SEO-страница ${fileName} сформирована. Загрузите файл в /vrachi/.`, 'success');
         } catch (e) {
             showToast('Ошибка SEO-публикации: ' + e.message, 'error');
+        }
+    }
+
+    async function bulkPublishFallbackDoctorPages() {
+        try {
+            if (!doctorsList.length) await loadDoctors();
+            await refreshDoctorProfileStatuses(false);
+
+            const fallbackDoctors = doctorsList.filter(d => d.id && !doctorProfileStatusCache[d.id]);
+            if (!fallbackDoctors.length) {
+                showToast('Все врачи уже имеют статические SEO-страницы', 'success');
+                return;
+            }
+
+            const generated = [];
+            const failed = [];
+
+            fallbackDoctors.forEach((doctor, idx) => {
+                try {
+                    const fileName = downloadDoctorStaticPage(doctor);
+                    generated.push(fileName);
+                    doctorProfileStatusCache[doctor.id] = true;
+                } catch (e) {
+                    failed.push(`${doctor.id}: ${e.message}`);
+                }
+            });
+
+            renderDoctorsTable();
+
+            const reportLines = [
+                'Bulk SEO publish report',
+                `Generated: ${generated.length}`,
+                `Failed: ${failed.length}`,
+                '',
+                'Generated files:',
+                ...generated.map(f => `- ${f}`),
+                '',
+                'Failed items:',
+                ...(failed.length ? failed.map(f => `- ${f}`) : ['- none'])
+            ];
+            downloadTextFile('seo_publish_report.txt', reportLines.join('\n'));
+
+            if (failed.length > 0) {
+                showToast(`Bulk SEO: сформировано ${generated.length}, ошибок ${failed.length}`, 'error');
+            } else {
+                showToast(`Bulk SEO: сформировано ${generated.length} страниц`, 'success');
+            }
+        } catch (e) {
+            showToast('Ошибка bulk SEO-публикации: ' + e.message, 'error');
         }
     }
 
