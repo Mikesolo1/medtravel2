@@ -29,10 +29,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
 
         grid.innerHTML = doctors.map(d => renderDoctorCard(d)).join('');
+        upgradeDoctorProfileLinks(grid, '../');
     } catch (e) {
         grid.innerHTML = '<p style="color:var(--color-text-light);font-size:0.9rem;">Не удалось загрузить список врачей. Попробуйте позже.</p>';
     }
 });
+
+function getDoctorProfileFallbackUrl(d) {
+    return `../vrachi/template.html?id=${encodeURIComponent(d.id || '')}`;
+}
 
 function renderDoctorCard(d) {
     const avatar = d.photo_url 
@@ -56,7 +61,7 @@ function renderDoctorCard(d) {
         <div class="doctor-card__header">
             <div class="doctor-card__avatar">${avatar}</div>
             <div class="doctor-card__info">
-                <div class="doctor-card__name"><a href="../vrachi/${d.id}.html">${d.name_ru}</a></div>
+                <div class="doctor-card__name"><a class="js-doctor-profile-link" data-doctor-id="${d.id || ''}" data-base="../" href="${getDoctorProfileFallbackUrl(d)}">${d.name_ru}</a></div>
                 <div class="doctor-card__spec">${d.specialty}</div>
                 <div class="doctor-card__position">${d.position}</div>
             </div>
@@ -68,4 +73,35 @@ function renderDoctorCard(d) {
         </div>
         <a href="../kontakty.html" class="doctor-card__btn"><i class="fas fa-calendar-check"></i> Записаться на консультацию</a>
     </div>`;
+}
+
+async function upgradeDoctorProfileLinks(container, base) {
+    const links = container.querySelectorAll('.js-doctor-profile-link[data-doctor-id]');
+    const cache = {};
+
+    for (const link of links) {
+        const doctorId = link.dataset.doctorId;
+        if (!doctorId) continue;
+
+        if (cache[doctorId] === undefined) {
+            cache[doctorId] = await staticProfileExists(`${base}vrachi/${doctorId}.html`);
+        }
+
+        if (cache[doctorId]) {
+            link.href = `${base}vrachi/${doctorId}.html`;
+        }
+    }
+}
+
+async function staticProfileExists(url) {
+    try {
+        const headResp = await fetch(url, { method: 'HEAD' });
+        if (headResp.ok) return true;
+        if (headResp.status !== 405) return false;
+
+        const getResp = await fetch(url, { method: 'GET' });
+        return getResp.ok;
+    } catch (e) {
+        return false;
+    }
 }
