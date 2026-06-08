@@ -27,11 +27,30 @@
         }
     });
 
+    function safePhotoUrl(url) {
+        const value = String(url || '').trim();
+        return /^https?:\/\//i.test(value) ? value : '';
+    }
+
+    function createBadge(className, iconClass, text) {
+        const badge = document.createElement('span');
+        badge.className = className;
+        const icon = document.createElement('i');
+        icon.className = `fas ${iconClass}`;
+        badge.appendChild(icon);
+        badge.appendChild(document.createTextNode(` ${text}`));
+        return badge;
+    }
+
     function applyDoctorData(d) {
         // === Photo ===
         const photoEl = document.querySelector('.doctor-profile__photo');
-        if (photoEl && d.photo_url) {
-            photoEl.innerHTML = `<img src="${d.photo_url}" alt="${d.name_ru}" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-user-doctor\\'></i>'">`;
+        const photoUrl = safePhotoUrl(d.photo_url);
+        if (photoEl && photoUrl) {
+            const img = document.createElement('img');
+            img.src = photoUrl;
+            img.alt = d.name_ru || 'doctor';
+            photoEl.replaceChildren(img);
         }
 
         // === Name ===
@@ -61,37 +80,44 @@
         // === Description ===
         const descEl = document.querySelector('.doctor-profile__desc');
         if (descEl && d.description) {
-            // Support line breaks in description
-            const paragraphs = d.description.split('\n').filter(p => p.trim());
+            const paragraphs = String(d.description).split('\n').map(p => p.trim()).filter(Boolean);
             if (paragraphs.length > 0) {
-                descEl.innerHTML = paragraphs.map(p => `<p>${p}</p>`).join('');
+                descEl.replaceChildren(...paragraphs.map(text => {
+                    const p = document.createElement('p');
+                    p.textContent = text;
+                    return p;
+                }));
             }
         }
 
         // === Languages / Badges ===
         const badgesEl = document.querySelector('.doctor-profile__badges');
-        if (badgesEl && d.languages) {
-            let badgesHTML = '';
+        if (badgesEl) {
+            const badges = [];
             if (d.online_consultation) {
-                badgesHTML += `<span class="doctor-profile__badge doctor-profile__badge--online"><i class="fas fa-video"></i> Онлайн-консультация</span>`;
+                badges.push(createBadge('doctor-profile__badge doctor-profile__badge--online', 'fa-video', 'Онлайн-консультация'));
             }
-            d.languages.split(',').forEach(lang => {
-                const l = lang.trim();
-                if (l) {
-                    badgesHTML += `<span class="doctor-profile__badge doctor-profile__badge--lang"><i class="fas fa-globe"></i> ${l}</span>`;
-                }
-            });
-            if (badgesHTML) badgesEl.innerHTML = badgesHTML;
+            if (d.languages) {
+                d.languages.split(',').map(l => l.trim()).filter(Boolean).forEach(lang => {
+                    badges.push(createBadge('doctor-profile__badge doctor-profile__badge--lang', 'fa-globe', lang));
+                });
+            }
+            if (badges.length > 0) {
+                badgesEl.replaceChildren(...badges);
+            }
         }
 
         // === Tags ===
         const tagsEl = document.querySelector('.doctor-profile__tags');
         if (tagsEl && d.tags) {
-            const tags = d.tags.split(',').map(t => t.trim()).filter(t => t);
-            if (tags.length > 0) {
-                tagsEl.innerHTML = tags.map(tag => 
-                    `<span class="doctor-profile__tag">${tag}</span>`
-                ).join('');
+            const tagNodes = d.tags.split(',').map(t => t.trim()).filter(Boolean).map(tag => {
+                const span = document.createElement('span');
+                span.className = 'doctor-profile__tag';
+                span.textContent = tag;
+                return span;
+            });
+            if (tagNodes.length > 0) {
+                tagsEl.replaceChildren(...tagNodes);
             }
         }
 

@@ -235,6 +235,7 @@
                             <button class="btn btn--secondary btn--sm" onclick="exportFallbackSeoPackage()"><i class="fas fa-box-archive"></i> Экспорт SEO-пакета</button>
                             <button class="btn btn--secondary btn--sm" onclick="exportSeoPublishManifest()"><i class="fas fa-file-csv"></i> SEO manifest CSV</button>
                             <button class="btn btn--secondary btn--sm" onclick="runSeoDryRunPreview()"><i class="fas fa-list-check"></i> SEO dry-run preview</button>
+                            <button class="btn btn--secondary btn--sm" onclick="exportSeoDryRunReport()"><i class="fas fa-file-lines"></i> Экспорт dry-run</button>
                             <button class="btn btn--secondary btn--sm" onclick="runIntegrationChecks()"><i class="fas fa-vial-circle-check"></i> Тест-баги интеграций</button>
                             <button class="btn btn--primary btn--sm" onclick="openDoctorForm()"><i class="fas fa-plus"></i> Добавить врача</button>
                         </div>
@@ -356,8 +357,16 @@
                 <div class="form-group"><label>Должность</label><input type="text" id="docPosition" placeholder="Заведующий отделением"></div>
             </div>
             <div class="form-row">
-                <div class="form-group"><label>Клиника (slug)</label><input type="text" id="docClinicSlug" placeholder="ikhilov"></div>
-                <div class="form-group"><label>Клиника (название)</label><input type="text" id="docClinicName" placeholder="Ихилов (Сураски)"></div>
+                <div class="form-group">
+                    <label>Клиника (справочник)</label>
+                    <select id="docClinicSlug"></select>
+                    <small>Выберите клинику из справочника. Свободный ввод отключён для целостности данных.</small>
+                </div>
+                <div class="form-group">
+                    <label>Клиника (название)</label>
+                    <input type="text" id="docClinicName" placeholder="Автозаполнение" readonly>
+                    <small>Поле заполняется автоматически по выбранному slug.</small>
+                </div>
             </div>
             <div class="form-group"><label>Описание</label><textarea id="docDescription" placeholder="Биография, опыт, достижения...&#10;Используйте перенос строки для разделения абзацев." rows="6"></textarea></div>
             <div class="form-group"><label>URL фото</label><input type="text" id="docPhotoUrl" placeholder="https://..." oninput="previewDoctorPhoto(this.value)"><small>Вставьте ссылку на фотографию врача. Превью появится автоматически.</small><div id="docPhotoPreview" style="margin-top:8px;"></div></div>
@@ -940,33 +949,49 @@
         }
     }
 
+    async function collectSeoDryRunData() {
+        if (!doctorsList.length) await loadDoctors();
+        await refreshDoctorProfileStatuses(false);
+
+        const fallbackDoctors = doctorsList.filter(d => d.id && !doctorProfileStatusCache[d.id]);
+        const canGenerate = [];
+        const blocked = [];
+
+        fallbackDoctors.forEach((doctor) => {
+            const normalizedId = normalizeSlug(doctor.id);
+            if (!normalizedId || !isValidSlug(normalizedId)) {
+                blocked.push({
+                    doctor_id: doctor.id || '',
+                    doctor_name: doctor.name_ru || doctor.id || '(без имени)',
+                    reason: 'невалидный id',
+                    target_path: ''
+                });
+                return;
+            }
+            if (!(doctor.name_ru || '').trim()) {
+                blocked.push({
+                    doctor_id: normalizedId,
+                    doctor_name: doctor.name_ru || normalizedId,
+                    reason: 'не заполнено ФИО',
+                    target_path: `vrachi/${normalizedId}.html`
+                });
+                return;
+            }
+
+            canGenerate.push({
+                id: normalizedId,
+                name: doctor.name_ru || normalizedId,
+                specialty: doctor.specialty || '—',
+                target: `vrachi/${normalizedId}.html`
+            });
+        });
+
+        return { fallbackDoctors, canGenerate, blocked };
+    }
+
     async function runSeoDryRunPreview() {
         try {
-            if (!doctorsList.length) await loadDoctors();
-            await refreshDoctorProfileStatuses(false);
-
-            const fallbackDoctors = doctorsList.filter(d => d.id && !doctorProfileStatusCache[d.id]);
-            const canGenerate = [];
-            const blocked = [];
-
-            fallbackDoctors.forEach((doctor) => {
-                const normalizedId = normalizeSlug(doctor.id);
-                if (!normalizedId || !isValidSlug(normalizedId)) {
-                    blocked.push(`${doctor.name_ru || doctor.id || '(без имени)'} — невалидный id`);
-                    return;
-                }
-                if (!(doctor.name_ru || '').trim()) {
-                    blocked.push(`${doctor.id} — не заполнено ФИО`);
-                    return;
-                }
-
-                canGenerate.push({
-                    id: normalizedId,
-                    name: doctor.name_ru || normalizedId,
-                    specialty: doctor.specialty || '—',
-                    target: `vrachi/${normalizedId}.html`
-                });
-            });
+            const { fallbackDoctors, canGenerate, blocked } = await collectSeoDryRunData();
 
             const summary = `<strong>SEO dry-run preview</strong><br>
                 Fallback-врачей: <strong>${fallbackDoctors.length}</strong><br>
@@ -974,7 +999,7 @@
                 Блокеры: <strong>${blocked.length}</strong>`;
 
             const previewItems = canGenerate.slice(0, 12).map(i => `<li><strong>${escapeHtml(i.id)}</strong> — ${escapeHtml(i.name)} (${escapeHtml(i.specialty)}) → ${escapeHtml(i.target)}</li>`);
-            const blockedItems = blocked.slice(0, 12).map(i => `<li>${escapeHtml(i)}</li>`);
+            const blockedItems = blocked.slice(0, 12).map(i => `<li><strong>${escapeHtml(i.doctor_id || '—')}</strong> — ${escapeHtml(i.reason)}</li>`);
 
             const details = [
                 canGenerate.length ? `<div style="margin-top:8px;"><strong>Примеры генерации:</strong><ul style="margin:6px 0 0 18px;">${previewItems.join('')}</ul>${canGenerate.length > 12 ? `<div style="margin-top:4px;color:var(--text-light);">и ещё ${canGenerate.length - 12}</div>` : ''}</div>` : '',
@@ -986,6 +1011,38 @@
         } catch (e) {
             renderIntegrationCheckResult(`<strong>Ошибка SEO dry-run:</strong> ${escapeHtml(e.message || 'unknown')}`, true);
             showToast('Ошибка SEO dry-run: ' + e.message, 'error');
+        }
+    }
+
+    async function exportSeoDryRunReport() {
+        try {
+            const { fallbackDoctors, canGenerate, blocked } = await collectSeoDryRunData();
+            const now = new Date();
+            const datePart = now.toISOString().slice(0, 10);
+
+            const header = ['doctor_id', 'doctor_name', 'status', 'specialty', 'target_path', 'reason'];
+            const rows = [
+                ...canGenerate.map(item => [item.id, item.name, 'ready', item.specialty, item.target, '']),
+                ...blocked.map(item => [item.doctor_id, item.doctor_name, 'blocked', '', item.target_path || '', item.reason])
+            ];
+            const csvContent = [header, ...rows].map(cols => cols.map(csvEscape).join(',')).join('\n');
+            downloadTextFile(`seo_dry_run_report_${datePart}.csv`, csvContent);
+
+            const txt = [
+                'SEO dry-run export report',
+                `Generated at: ${now.toISOString()}`,
+                `Fallback doctors: ${fallbackDoctors.length}`,
+                `Ready: ${canGenerate.length}`,
+                `Blocked: ${blocked.length}`,
+                '',
+                'Blocked details:',
+                ...(blocked.length ? blocked.map(b => `- ${b.doctor_id || '—'}: ${b.reason}`) : ['- none'])
+            ].join('\n');
+            downloadTextFile('seo_dry_run_report.txt', txt);
+
+            showToast(`Dry-run отчет экспортирован: ready ${canGenerate.length}, blocked ${blocked.length}`, blocked.length > 0 ? 'error' : 'success');
+        } catch (e) {
+            showToast('Ошибка экспорта dry-run отчета: ' + e.message, 'error');
         }
     }
 
@@ -1234,6 +1291,35 @@
             }).join('');
     }
 
+    function syncDoctorClinicName() {
+        const clinicSelect = document.getElementById('docClinicSlug');
+        const clinicNameInput = document.getElementById('docClinicName');
+        if (!clinicSelect || !clinicNameInput) return;
+
+        const selectedSlug = normalizeSlug(clinicSelect.value);
+        const clinic = clinicsList.find(c => normalizeSlug(c.slug) === selectedSlug);
+        clinicNameInput.value = clinic ? (clinic.name_ru || clinic.name_en || clinic.slug || '') : '';
+    }
+
+    function renderDoctorClinicSelector(selectedSlug = '') {
+        const clinicSelect = document.getElementById('docClinicSlug');
+        if (!clinicSelect) return;
+
+        const normalizedSelected = normalizeSlug(selectedSlug);
+        const sortedClinics = [...clinicsList].sort((a, b) => (a.order_num || 999) - (b.order_num || 999));
+        const options = ['<option value="">— Не выбрано —</option>']
+            .concat(sortedClinics.map(c => {
+                const slug = normalizeSlug(c.slug);
+                const title = c.name_ru || c.name_en || slug;
+                const selected = slug === normalizedSelected ? 'selected' : '';
+                return `<option value="${slug}" ${selected}>${escapeHtml(title)} (${escapeHtml(slug)})</option>`;
+            }));
+
+        clinicSelect.innerHTML = options.join('');
+        clinicSelect.onchange = syncDoctorClinicName;
+        syncDoctorClinicName();
+    }
+
     // --- DOCTORS ---
     async function loadDoctors() {
         try {
@@ -1295,8 +1381,7 @@
         document.getElementById('docNameEn').value = doctor?.name_en || '';
         document.getElementById('docSpecialty').value = doctor?.specialty || '';
         document.getElementById('docPosition').value = doctor?.position || '';
-        document.getElementById('docClinicSlug').value = doctor?.clinic_slug || '';
-        document.getElementById('docClinicName').value = doctor?.clinic_name || '';
+        renderDoctorClinicSelector(doctor?.clinic_slug || '');
         document.getElementById('docDescription').value = doctor?.description || '';
         document.getElementById('docPhotoUrl').value = doctor?.photo_url || '';
         previewDoctorPhoto(doctor?.photo_url || '');
@@ -1305,6 +1390,7 @@
         document.getElementById('docOnline').value = doctor?.online_consultation ? 'true' : 'false';
         document.getElementById('docOrder').value = doctor?.order_num || 0;
         renderDoctorTreatmentsSelector(doctor?.treatment_slugs || '');
+        if (!clinicsList.length) loadClinics();
         document.getElementById('doctorModal').classList.add('show');
     }
 
@@ -1321,6 +1407,8 @@
         const nameRu = document.getElementById('docNameRu').value.trim();
         const specialty = document.getElementById('docSpecialty').value.trim();
         const clinicSlug = normalizeSlug(document.getElementById('docClinicSlug').value);
+        const selectedClinic = clinicsList.find(c => normalizeSlug(c.slug) === clinicSlug);
+        const clinicName = selectedClinic ? (selectedClinic.name_ru || selectedClinic.name_en || clinicSlug) : '';
         const selectedTreatmentSlugs = getDoctorSelectedTreatmentSlugs();
         const selectedTreatmentNames = selectedTreatmentSlugs.map(slug => {
             const found = treatmentsList.find(t => normalizeSlug(t.slug || t.id) === slug);
@@ -1356,7 +1444,7 @@
             specialty,
             position: document.getElementById('docPosition').value.trim(),
             clinic_slug: clinicSlug,
-            clinic_name: document.getElementById('docClinicName').value.trim(),
+            clinic_name: clinicName,
             description: document.getElementById('docDescription').value.trim(),
             photo_url: document.getElementById('docPhotoUrl').value.trim(),
             tags: document.getElementById('docTags').value.trim(),
@@ -1419,6 +1507,7 @@
             const data = await res.json();
             clinicsList = data.data || [];
             renderClinicsTable();
+            renderDoctorClinicSelector(document.getElementById('docClinicSlug')?.value || '');
         } catch (e) { document.getElementById('clinicsBody').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;">Нет данных. Добавьте первую клинику.</td></tr>'; showToast('Ошибка загрузки клиник: ' + e.message, 'error'); }
     }
 

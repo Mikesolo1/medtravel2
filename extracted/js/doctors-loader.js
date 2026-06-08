@@ -41,25 +41,40 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 });
 
+function escapeHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function safePhotoUrl(url) {
+    const value = String(url || '').trim();
+    return /^https?:\/\//i.test(value) ? value : '';
+}
+
 function getDoctorProfileFallbackUrl(d) {
     return `../vrachi/template.html?id=${encodeURIComponent(d.id || '')}`;
 }
 
 function renderDoctorCard(d) {
-    const avatar = d.photo_url 
-        ? `<img src="${d.photo_url}" alt="${d.name_ru}" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-user-doctor\\'></i>'">` 
+    const photoUrl = safePhotoUrl(d.photo_url);
+    const avatar = photoUrl
+        ? `<img src="${escapeHtml(photoUrl)}" alt="${escapeHtml(d.name_ru)}">`
         : `<i class="fas fa-user-doctor"></i>`;
-    
-    const tags = (d.tags || '').split(',').slice(0, 4).map(t => 
-        `<span class="doctor-card__tag">${t.trim()}</span>`
+
+    const tags = (d.tags || '').split(',').slice(0, 4).map(t =>
+        `<span class="doctor-card__tag">${escapeHtml(t.trim())}</span>`
     ).join('');
-    
-    const onlineTag = d.online_consultation 
-        ? `<span class="doctor-card__tag doctor-card__tag--accent">Онлайн-консультация</span>` 
+
+    const onlineTag = d.online_consultation
+        ? `<span class="doctor-card__tag doctor-card__tag--accent">Онлайн-консультация</span>`
         : '';
 
-    const langBadge = (d.languages || '').toLowerCase().includes('русский') 
-        ? `<span class="doctor-card__tag doctor-card__tag--accent">Русский язык</span>` 
+    const langBadge = (d.languages || '').toLowerCase().includes('русский')
+        ? `<span class="doctor-card__tag doctor-card__tag--accent">Русский язык</span>`
         : '';
 
     return `
@@ -67,13 +82,13 @@ function renderDoctorCard(d) {
         <div class="doctor-card__header">
             <div class="doctor-card__avatar">${avatar}</div>
             <div class="doctor-card__info">
-                <div class="doctor-card__name"><a class="js-doctor-profile-link" data-doctor-id="${d.id || ''}" data-base="../" href="${getDoctorProfileFallbackUrl(d)}">${d.name_ru}</a></div>
-                <div class="doctor-card__spec">${d.specialty}</div>
-                <div class="doctor-card__position">${d.position}</div>
+                <div class="doctor-card__name"><a class="js-doctor-profile-link" data-doctor-id="${escapeHtml(d.id || '')}" data-base="../" href="${getDoctorProfileFallbackUrl(d)}">${escapeHtml(d.name_ru)}</a></div>
+                <div class="doctor-card__spec">${escapeHtml(d.specialty)}</div>
+                <div class="doctor-card__position">${escapeHtml(d.position)}</div>
             </div>
         </div>
-        <div class="doctor-card__clinic"><i class="fas fa-hospital"></i> ${d.clinic_name}</div>
-        <p class="doctor-card__desc">${d.description || ''}</p>
+        <div class="doctor-card__clinic"><i class="fas fa-hospital"></i> ${escapeHtml(d.clinic_name)}</div>
+        <p class="doctor-card__desc">${escapeHtml(d.description || '')}</p>
         <div class="doctor-card__tags">
             ${tags}${onlineTag}${langBadge}
         </div>

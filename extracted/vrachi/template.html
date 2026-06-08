@@ -119,6 +119,21 @@
         }
     });
 
+    function safePhotoUrl(url) {
+        const value = String(url || '').trim();
+        return /^https?:\/\//i.test(value) ? value : '';
+    }
+
+    function createBadge(className, iconClass, text) {
+        const badge = document.createElement('span');
+        badge.className = className;
+        const icon = document.createElement('i');
+        icon.className = `fas ${iconClass}`;
+        badge.appendChild(icon);
+        badge.appendChild(document.createTextNode(` ${text}`));
+        return badge;
+    }
+
     function renderDoctor(d) {
         document.title = `${d.name_ru} — ${d.specialty} | Taurus Medical Experts`;
         document.getElementById('pageMeta').setAttribute('content', `${d.name_ru} — ${d.specialty}. ${d.position}. ${d.clinic_name}. Запись на консультацию.`);
@@ -131,27 +146,38 @@
         document.getElementById('doctorDesc').textContent = d.description;
 
         // Photo
-        if (d.photo_url) {
-            document.getElementById('doctorPhoto').innerHTML = `<img src="${d.photo_url}" alt="${d.name_ru}">`;
+        const photoUrl = safePhotoUrl(d.photo_url);
+        if (photoUrl) {
+            const photoWrap = document.getElementById('doctorPhoto');
+            const img = document.createElement('img');
+            img.src = photoUrl;
+            img.alt = d.name_ru || 'doctor';
+            photoWrap.replaceChildren(img);
         }
 
         // Badges
         const badges = document.getElementById('doctorBadges');
+        const badgeNodes = [];
         if (d.online_consultation) {
-            badges.innerHTML += `<span class="doctor-profile__badge doctor-profile__badge--online"><i class="fas fa-video"></i> Онлайн-консультация</span>`;
+            badgeNodes.push(createBadge('doctor-profile__badge doctor-profile__badge--online', 'fa-video', 'Онлайн-консультация'));
         }
         if (d.languages) {
-            d.languages.split(',').forEach(lang => {
-                badges.innerHTML += `<span class="doctor-profile__badge doctor-profile__badge--lang"><i class="fas fa-globe"></i> ${lang.trim()}</span>`;
+            d.languages.split(',').map(l => l.trim()).filter(Boolean).forEach(lang => {
+                badgeNodes.push(createBadge('doctor-profile__badge doctor-profile__badge--lang', 'fa-globe', lang));
             });
         }
+        if (badgeNodes.length) badges.replaceChildren(...badgeNodes);
 
         // Tags
         const tagsEl = document.getElementById('doctorTags');
         if (d.tags) {
-            d.tags.split(',').forEach(tag => {
-                tagsEl.innerHTML += `<span class="doctor-profile__tag">${tag.trim()}</span>`;
+            const tagNodes = d.tags.split(',').map(t => t.trim()).filter(Boolean).map(tag => {
+                const span = document.createElement('span');
+                span.className = 'doctor-profile__tag';
+                span.textContent = tag;
+                return span;
             });
+            tagsEl.replaceChildren(...tagNodes);
         }
 
         // Directions
@@ -188,18 +214,33 @@
         };
 
         if (d.specialty) {
-            const specs = d.specialty.split(',').map(s => s.trim());
+            const specs = d.specialty.split(',').map(s => s.trim()).filter(Boolean);
             const added = new Set();
+            const nodes = [];
             specs.forEach(spec => {
                 const mapped = specialtyMap[spec];
                 if (mapped && !added.has(mapped.url)) {
                     added.add(mapped.url);
-                    dirs.innerHTML += `<a href="${mapped.url}" class="doctor-directions__item"><i class="fas ${mapped.icon}"></i> ${spec}</a>`;
+                    const a = document.createElement('a');
+                    a.href = mapped.url;
+                    a.className = 'doctor-directions__item';
+                    const i = document.createElement('i');
+                    i.className = `fas ${mapped.icon}`;
+                    a.appendChild(i);
+                    a.appendChild(document.createTextNode(` ${spec}`));
+                    nodes.push(a);
                 } else if (!mapped && !added.has(spec)) {
                     added.add(spec);
-                    dirs.innerHTML += `<span class="doctor-directions__item"><i class="fas fa-stethoscope"></i> ${spec}</span>`;
+                    const span = document.createElement('span');
+                    span.className = 'doctor-directions__item';
+                    const i = document.createElement('i');
+                    i.className = 'fas fa-stethoscope';
+                    span.appendChild(i);
+                    span.appendChild(document.createTextNode(` ${spec}`));
+                    nodes.push(span);
                 }
             });
+            if (nodes.length) dirs.replaceChildren(...nodes);
         }
     }
     </script>
