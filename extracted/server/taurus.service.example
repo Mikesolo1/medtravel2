@@ -1,0 +1,41 @@
+# ===== TAURUS MEDICAL — systemd unit =====
+# Файл: /etc/systemd/system/taurus.service
+# Активация:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now taurus
+#   sudo systemctl status taurus
+#   journalctl -u taurus -f          # логи
+
+[Unit]
+Description=Taurus Medical — tables API + publish-server
+After=network.target
+
+[Service]
+Type=simple
+# Пользователь без root-прав (создать: sudo adduser --system --group taurus)
+User=taurus
+Group=taurus
+WorkingDirectory=/var/www/taurus/extracted/server
+
+# Переменные окружения (ОБЯЗАТЕЛЬНО задать секреты в проде!)
+Environment=NODE_ENV=production
+Environment=TABLES_PORT=8788
+Environment=PUBLISH_PORT=8787
+Environment=DB_PATH=/var/www/taurus/extracted/server/data.db
+Environment=SITE_BASE_URL=https://kliniki-izrailya.solomatin-marketing.ru
+# Bearer-токен для POST /admin/* — СГЕНЕРИРОВАТЬ свой: openssl rand -hex 24
+Environment=ADMIN_PUBLISH_TOKEN=ЗАМЕНИ_МЕНЯ_openssl_rand_hex_24
+# Секрет для подписи сессий админки — тоже свой
+Environment=ADMIN_AUTH_SECRET=ЗАМЕНИ_МЕНЯ_openssl_rand_hex_32
+
+ExecStart=/usr/bin/node start.js
+Restart=on-failure
+RestartSec=3
+
+# Безопасность
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/var/www/taurus/extracted/server /var/www/taurus/extracted/vrachi /var/www/taurus/extracted/sitemap.xml
+
+[Install]
+WantedBy=multi-user.target

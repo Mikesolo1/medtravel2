@@ -1,0 +1,19 @@
+{
+  "name": "taurus-medical-server",
+  "version": "1.0.0",
+  "description": "Taurus Medical Experts — tables API (SQLite) + publish-server",
+  "private": true,
+  "scripts": {
+    "seed": "node seed.js",
+    "seed:reset": "node seed.js --reset",
+    "tables": "node tables-server.js",
+    "publish": "node publish-server.js",
+    "start": "node start.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
