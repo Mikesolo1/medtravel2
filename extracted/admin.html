@@ -232,6 +232,7 @@
                         <div style="display:flex;gap:8px;flex-wrap:wrap;">
                             <button class="btn btn--secondary btn--sm" onclick="refreshDoctorProfileStatuses(true)"><i class="fas fa-link"></i> Проверить SEO-страницы</button>
                             <button class="btn btn--secondary btn--sm" onclick="bulkPublishFallbackDoctorPages()"><i class="fas fa-file-zipper"></i> Скачать SEO для fallback</button>
+                            <button class="btn btn--secondary btn--sm" onclick="exportFallbackSeoPackage()"><i class="fas fa-box-archive"></i> Экспорт SEO-пакета</button>
                             <button class="btn btn--secondary btn--sm" onclick="runIntegrationChecks()"><i class="fas fa-vial-circle-check"></i> Тест-баги интеграций</button>
                             <button class="btn btn--primary btn--sm" onclick="openDoctorForm()"><i class="fas fa-plus"></i> Добавить врача</button>
                         </div>
@@ -713,6 +714,18 @@
         setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
+    function downloadJsonFile(fileName, payload) {
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
     async function publishDoctorStaticPageById(id) {
         const doctor = doctorsList.find(d => d.id === id);
         if (!doctor) {
@@ -743,7 +756,7 @@
             const generated = [];
             const failed = [];
 
-            fallbackDoctors.forEach((doctor, idx) => {
+            fallbackDoctors.forEach((doctor) => {
                 try {
                     const fileName = downloadDoctorStaticPage(doctor);
                     generated.push(fileName);
@@ -775,6 +788,70 @@
             }
         } catch (e) {
             showToast('Ошибка bulk SEO-публикации: ' + e.message, 'error');
+        }
+    }
+
+    async function exportFallbackSeoPackage() {
+        try {
+            if (!doctorsList.length) await loadDoctors();
+            await refreshDoctorProfileStatuses(false);
+
+            const fallbackDoctors = doctorsList.filter(d => d.id && !doctorProfileStatusCache[d.id]);
+            if (!fallbackDoctors.length) {
+                showToast('Fallback-врачей не найдено: пакет не требуется', 'success');
+                return;
+            }
+
+            const packageItems = [];
+            const failed = [];
+
+            fallbackDoctors.forEach((doctor) => {
+                try {
+                    const html = buildDoctorStaticPageHtml(doctor);
+                    packageItems.push({
+                        doctor_id: normalizeSlug(doctor.id),
+                        file_name: `${normalizeSlug(doctor.id)}.html`,
+                        name_ru: doctor.name_ru || '',
+                        specialty: doctor.specialty || '',
+                        clinic_name: doctor.clinic_name || '',
+                        html
+                    });
+                } catch (e) {
+                    failed.push(`${doctor.id}: ${e.message}`);
+                }
+            });
+
+            const now = new Date();
+            const datePart = now.toISOString().slice(0, 10);
+            const payload = {
+                exported_at: now.toISOString(),
+                export_type: 'fallback_doctors_seo_package',
+                items_count: packageItems.length,
+                failed_count: failed.length,
+                items: packageItems
+            };
+            downloadJsonFile(`seo_fallback_package_${datePart}.json`, payload);
+
+            const reportLines = [
+                'SEO fallback package export report',
+                `Exported: ${packageItems.length}`,
+                `Failed: ${failed.length}`,
+                '',
+                'Files in package:',
+                ...packageItems.map(i => `- ${i.file_name}`),
+                '',
+                'Failed items:',
+                ...(failed.length ? failed.map(f => `- ${f}`) : ['- none'])
+            ];
+            downloadTextFile('seo_fallback_package_report.txt', reportLines.join('\n'));
+
+            if (failed.length > 0) {
+                showToast(`SEO-пакет: экспортировано ${packageItems.length}, ошибок ${failed.length}`, 'error');
+            } else {
+                showToast(`SEO-пакет сформирован: ${packageItems.length} страниц`, 'success');
+            }
+        } catch (e) {
+            showToast('Ошибка экспорта SEO-пакета: ' + e.message, 'error');
         }
     }
 
