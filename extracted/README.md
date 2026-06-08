@@ -124,6 +124,33 @@
 | POST | `tables/form_submissions` | Сохранение заявки |
 | GET | `tables/form_submissions?limit=100&sort=-created_at` | Список заявок |
 
+### Publish API (server-side SEO generation)
+
+Для устранения разрыва «врач создан в БД, но нет постоянной SEO-страницы», добавлен сервер публикации:
+
+- `GET /health` — проверка доступности publish-сервиса
+- `POST /admin/publish/doctor/:id` — генерация `vrachi/{id}.html` + обновление `sitemap.xml`
+- `POST /admin/publish/doctor/:id?mode=dry-run` — dry-run без записи файла
+- `POST /admin/publish/doctors/bulk` — bulk-публикация массива врачей
+- `POST /admin/publish/sitemap` — массовое обновление sitemap по списку slug
+
+Локальный запуск:
+
+```bash
+cd extracted
+PORT=8787 TABLES_API_BASE="http://localhost:8788/tables" node server/publish-server.js
+```
+
+Опционально можно защитить endpoint токеном:
+
+```bash
+ADMIN_PUBLISH_TOKEN="your-secret" node server/publish-server.js
+```
+
+В `admin.html` publish интеграция работает в 2 режимах:
+- **Primary:** серверный `POST /admin/publish/...`
+- **Fallback:** локальная генерация и скачивание html-файла (если backend недоступен)
+
 ## Технологии
 
 - HTML5, CSS3, JavaScript (ES6+)
