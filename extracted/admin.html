@@ -231,6 +231,7 @@
                         <div class="admin-card__title" style="margin-bottom:0;"><i class="fas fa-list"></i> Список врачей</div>
                         <div style="display:flex;gap:8px;flex-wrap:wrap;">
                             <button class="btn btn--secondary btn--sm" onclick="refreshDoctorProfileStatuses(true)"><i class="fas fa-link"></i> Проверить SEO-страницы</button>
+                            <button class="btn btn--secondary btn--sm" onclick="runIntegrationChecks()"><i class="fas fa-vial-circle-check"></i> Тест-баги интеграций</button>
                             <button class="btn btn--primary btn--sm" onclick="openDoctorForm()"><i class="fas fa-plus"></i> Добавить врача</button>
                         </div>
                     </div>
@@ -240,6 +241,7 @@
                             <tbody id="doctorsBody"><tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:40px;">Загрузка...</td></tr></tbody>
                         </table>
                     </div>
+                    <div id="integrationCheckResult" style="margin-top:14px;display:none;padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:var(--bg);font-size:0.8125rem;"></div>
                 </div>
             </div>
 
@@ -850,6 +852,86 @@
             const staticCount = doctorsList.filter(d => doctorProfileStatusCache[d.id]).length;
             const fallbackCount = doctorsList.length - staticCount;
             showToast(`Проверка SEO-страниц: статических ${staticCount}, fallback ${fallbackCount}`, 'success');
+        }
+    }
+
+    function findDuplicates(values) {
+        const normalized = values.map(v => normalizeSlug(v)).filter(Boolean);
+        const seen = new Set();
+        const dupes = new Set();
+        normalized.forEach(v => {
+            if (seen.has(v)) dupes.add(v);
+            seen.add(v);
+        });
+        return Array.from(dupes);
+    }
+
+    function renderIntegrationCheckResult(html, hasIssues = false) {
+        const box = document.getElementById('integrationCheckResult');
+        if (!box) return;
+        box.style.display = 'block';
+        box.style.borderColor = hasIssues ? 'rgba(229,62,62,0.35)' : 'rgba(56,161,105,0.35)';
+        box.style.background = hasIssues ? 'rgba(229,62,62,0.05)' : 'rgba(56,161,105,0.06)';
+        box.innerHTML = html;
+    }
+
+    async function runIntegrationChecks() {
+        try {
+            await Promise.all([loadDoctors(), loadClinics(), loadTreatments()]);
+            await refreshDoctorProfileStatuses(false);
+
+            const clinicSlugs = new Set(clinicsList.map(c => normalizeSlug(c.slug)).filter(Boolean));
+            const treatmentSlugs = new Set(treatmentsList.map(t => normalizeSlug(t.slug || t.id)).filter(Boolean));
+
+            const doctorInvalidIds = doctorsList.filter(d => !isValidSlug(normalizeSlug(d.id))).map(d => d.id || '(empty)');
+            const doctorDuplicateIds = findDuplicates(doctorsList.map(d => d.id));
+            const clinicDuplicateSlugs = findDuplicates(clinicsList.map(c => c.slug));
+            const treatmentDuplicateSlugs = findDuplicates(treatmentsList.map(t => t.slug || t.id));
+
+            const doctorsWithUnknownClinic = doctorsList
+                .filter(d => normalizeSlug(d.clinic_slug) && !clinicSlugs.has(normalizeSlug(d.clinic_slug)))
+                .map(d => `${d.name_ru || d.id} → ${d.clinic_slug}`);
+
+            const doctorsWithUnknownTreatments = doctorsList
+                .map(d => {
+                    const unknown = parseCsv(d.treatment_slugs)
+                        .map(normalizeSlug)
+                        .filter(Boolean)
+                        .filter(slug => !treatmentSlugs.has(slug));
+                    return unknown.length ? `${d.name_ru || d.id} → ${unknown.join(', ')}` : '';
+                })
+                .filter(Boolean);
+
+            const doctorsWithoutStaticSeo = doctorsList
+                .filter(d => d.id && !doctorProfileStatusCache[d.id])
+                .map(d => d.name_ru || d.id);
+
+            const totalIssues = doctorInvalidIds.length + doctorDuplicateIds.length + clinicDuplicateSlugs.length + treatmentDuplicateSlugs.length + doctorsWithUnknownClinic.length + doctorsWithUnknownTreatments.length;
+
+            const summary = `<strong>Интеграционный тест завершён</strong><br>
+                Врачи: ${doctorsList.length} • Клиники: ${clinicsList.length} • Профили лечения: ${treatmentsList.length}<br>
+                Ошибки связности: <strong>${totalIssues}</strong> • Врачей на fallback SEO: <strong>${doctorsWithoutStaticSeo.length}</strong>`;
+
+            const details = [
+                doctorInvalidIds.length ? `<li><strong>Невалидные doctor.id:</strong> ${doctorInvalidIds.join('; ')}</li>` : '',
+                doctorDuplicateIds.length ? `<li><strong>Дубли doctor.id:</strong> ${doctorDuplicateIds.join(', ')}</li>` : '',
+                clinicDuplicateSlugs.length ? `<li><strong>Дубли clinic.slug:</strong> ${clinicDuplicateSlugs.join(', ')}</li>` : '',
+                treatmentDuplicateSlugs.length ? `<li><strong>Дубли treatment.slug:</strong> ${treatmentDuplicateSlugs.join(', ')}</li>` : '',
+                doctorsWithUnknownClinic.length ? `<li><strong>Врач → несуществующая клиника:</strong> ${doctorsWithUnknownClinic.join('; ')}</li>` : '',
+                doctorsWithUnknownTreatments.length ? `<li><strong>Врач → несуществующий профиль лечения:</strong> ${doctorsWithUnknownTreatments.join('; ')}</li>` : '',
+                doctorsWithoutStaticSeo.length ? `<li><strong>Fallback SEO (без статической страницы):</strong> ${doctorsWithoutStaticSeo.slice(0, 8).join(', ')}${doctorsWithoutStaticSeo.length > 8 ? ` и ещё ${doctorsWithoutStaticSeo.length - 8}` : ''}</li>` : ''
+            ].filter(Boolean);
+
+            renderIntegrationCheckResult(`${summary}${details.length ? `<ul style="margin:8px 0 0 18px;">${details.join('')}</ul>` : '<div style="margin-top:8px;color:var(--success);">Критичных проблем связности не найдено.</div>'}`, totalIssues > 0);
+
+            if (totalIssues > 0) {
+                showToast(`Интеграционный тест: найдено проблем ${totalIssues}`, 'error');
+            } else {
+                showToast('Интеграционный тест: критичных проблем не найдено', 'success');
+            }
+        } catch (e) {
+            renderIntegrationCheckResult(`<strong>Ошибка интеграционного теста:</strong> ${escapeHtml(e.message || 'unknown')}`, true);
+            showToast('Ошибка интеграционного теста: ' + e.message, 'error');
         }
     }
 
