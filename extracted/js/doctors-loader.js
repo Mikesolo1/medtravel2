@@ -7,7 +7,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     const script = document.querySelector('script[data-specialty]');
     if (!script) return;
     
-    const specialties = script.dataset.specialty.split(',').map(s => s.trim().toLowerCase());
+    const specialties = (script.dataset.specialty || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    const treatmentKeywords = (script.dataset.treatment || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
     const grid = document.getElementById('doctorsGrid');
     if (!grid) return;
 
@@ -18,7 +19,12 @@ document.addEventListener('DOMContentLoaded', async function() {
             if (!d.is_active) return false;
             const docSpecs = (d.specialty || '').toLowerCase();
             const docTags = (d.tags || '').toLowerCase();
-            return specialties.some(s => docSpecs.includes(s) || docTags.includes(s));
+            const docTreatments = `${d.treatment_slugs || ''},${d.treatment_names || ''},${docTags}`.toLowerCase();
+
+            const specialtyMatched = specialties.length === 0 || specialties.some(s => docSpecs.includes(s) || docTags.includes(s));
+            const treatmentMatched = treatmentKeywords.length === 0 || treatmentKeywords.some(t => docTreatments.includes(t));
+
+            return specialtyMatched && treatmentMatched;
         });
 
         doctors.sort((a, b) => (a.order_num || 99) - (b.order_num || 99));
