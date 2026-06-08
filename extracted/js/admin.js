@@ -2,7 +2,10 @@
     const API_BASE = 'tables';
     const PUBLISH_API_BASE = (window.__PUBLISH_API_BASE__ || '').replace(/\/$/, '');
     const PUBLISH_API_TOKEN = window.__PUBLISH_API_TOKEN__ || '';
+    const ADMIN_AUTH_TOKEN_STORAGE_KEY = 'taurus_admin_auth_token';
     let currentPassword = '';
+    let adminAuthToken = localStorage.getItem(ADMIN_AUTH_TOKEN_STORAGE_KEY) || '';
+    let backendAuthEnabled = false;
     let settings = {};
     let pages = [];
     let selectedPageId = null;
@@ -87,7 +90,14 @@
             photo_url: (doctor?.photo_url || '').trim(),
             tags: parseList(doctor?.tags),
             languages: parseList(doctor?.languages),
-            online_consultation: !!doctor?.online_consultation
+            online_consultation: !!doctor?.online_consultation,
+            seo_title: (doctor?.seo_title || '').trim(),
+            seo_description: (doctor?.seo_description || '').trim(),
+            seo_og_title: (doctor?.seo_og_title || '').trim(),
+            seo_og_description: (doctor?.seo_og_description || '').trim(),
+            seo_og_image: (doctor?.seo_og_image || doctor?.photo_url || '').trim(),
+            seo_canonical_url: (doctor?.seo_canonical_url || '').trim(),
+            seo_robots: (doctor?.seo_robots || '').trim()
         };
     }
 
@@ -150,9 +160,14 @@
             throw new Error('Для SEO-публикации требуется ФИО врача');
         }
 
-        const title = `${doctor.name_ru} — ${doctor.specialty || 'Врач'} | Taurus Medical Experts`;
-        const metaDescription = buildDoctorSeoMetaDescription(doctor);
+        const title = doctor.seo_title || `${doctor.name_ru} — ${doctor.specialty || 'Врач'} | Taurus Medical Experts`;
+        const metaDescription = doctor.seo_description || buildDoctorSeoMetaDescription(doctor);
         const keywords = buildDoctorSeoKeywords(doctor);
+        const robotsContent = doctor.seo_robots || 'index, follow';
+        const canonicalUrl = doctor.seo_canonical_url || `vrachi/${encodeURIComponent(doctor.id)}.html`;
+        const ogTitle = doctor.seo_og_title || title;
+        const ogDescription = doctor.seo_og_description || metaDescription;
+        const ogImage = doctor.seo_og_image || doctor.photo_url;
         const jsonLd = JSON.stringify(buildDoctorSeoJsonLd(doctor));
         const badgesHtml = [
             doctor.online_consultation ? '<span class="doctor-profile__badge doctor-profile__badge--online"><i class="fas fa-video"></i> Онлайн-консультация</span>' : '',
@@ -172,8 +187,13 @@
     <title>${escapeHtml(title)}</title>
     <meta name="description" content="${escapeHtml(metaDescription)}">
     <meta name="keywords" content="${escapeHtml(keywords)}">
-    <meta name="robots" content="index, follow">
-    <link rel="canonical" href="vrachi/${encodeURIComponent(doctor.id)}.html">
+    <meta name="robots" content="${escapeHtml(robotsContent)}">
+    <link rel="canonical" href="${escapeHtml(canonicalUrl)}">
+    <meta property="og:type" content="profile">
+    <meta property="og:title" content="${escapeHtml(ogTitle)}">
+    <meta property="og:description" content="${escapeHtml(ogDescription)}">
+    ${ogImage ? `<meta property="og:image" content="${escapeHtml(ogImage)}">` : ''}
+    <meta property="og:url" content="${escapeHtml(canonicalUrl)}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -297,7 +317,11 @@
 
     function getPublishHeaders() {
         const headers = { 'Content-Type': 'application/json' };
-        if (PUBLISH_API_TOKEN) headers.Authorization = `Bearer ${PUBLISH_API_TOKEN}`;
+        if (adminAuthToken) {
+            headers.Authorization = `Bearer ${adminAuthToken}`;
+        } else if (PUBLISH_API_TOKEN) {
+            headers.Authorization = `Bearer ${PUBLISH_API_TOKEN}`;
+        }
         return headers;
     }
 
@@ -326,6 +350,49 @@
         }
 
         return payload;
+    }
+
+    async function tryServerAdminLogin(password) {
+        return callPublishJson('/admin/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ password })
+        });
+    }
+
+    async function tryServerAdminVerify() {
+        return callPublishJson('/admin/auth/verify', { method: 'GET' });
+    }
+
+    async function tryServerAdminLogout() {
+        return callPublishJson('/admin/auth/logout', { method: 'POST', body: JSON.stringify({}) });
+    }
+
+    function setAdminAuthToken(token = '') {
+        adminAuthToken = String(token || '').trim();
+        if (adminAuthToken) {
+            localStorage.setItem(ADMIN_AUTH_TOKEN_STORAGE_KEY, adminAuthToken);
+        } else {
+            localStorage.removeItem(ADMIN_AUTH_TOKEN_STORAGE_KEY);
+        }
+    }
+
+    function showAdminLayout() {
+        document.getElementById('loginOverlay').classList.add('hidden');
+        document.getElementById('adminLayout').style.display = 'grid';
+    }
+
+    function hideAdminLayout() {
+        document.getElementById('loginOverlay').classList.remove('hidden');
+        document.getElementById('adminLayout').style.display = 'none';
+    }
+
+    function bootstrapAdminData() {
+        loadPages().then(() => ensureNapravleniyaPages());
+        loadSettings();
+        loadSubmissions();
+        loadDoctors();
+        loadClinics();
+        loadTreatments();
     }
 
     async function tryServerValidateDoctorRelations({ clinic_slug = '', treatment_slugs = [] }) {
@@ -911,26 +978,79 @@
         const pwd = document.getElementById('loginPassword').value;
         if (!pwd) return;
         try {
+            try {
+                const loginPayload = await tryServerAdminLogin(pwd);
+                if (loginPayload?.token) {
+                    setAdminAuthToken(loginPayload.token);
+                    backendAuthEnabled = true;
+                    currentPassword = '';
+                    document.getElementById('loginError').style.display = 'none';
+                    showAdminLayout();
+                    bootstrapAdminData();
+                    return;
+                }
+            } catch (serverAuthError) {
+                if (!String(serverAuthError.message || '').includes('404')) {
+                    document.getElementById('loginError').textContent = 'Неверный пароль или backend auth отклонил запрос';
+                    document.getElementById('loginError').style.display = 'block';
+                    return;
+                }
+                backendAuthEnabled = false;
+                console.warn('Backend auth endpoint unavailable, fallback to legacy password check');
+            }
+
             const res = await fetch(`${API_BASE}/site_settings?search=admin_password`);
             const data = await res.json();
             const record = data.data.find(r => r.key === 'admin_password');
             if (record && record.value === pwd) {
                 currentPassword = pwd;
-                document.getElementById('loginOverlay').classList.add('hidden');
-                document.getElementById('adminLayout').style.display = 'grid';
-                loadPages().then(() => ensureNapravleniyaPages()); loadSettings(); loadSubmissions(); loadDoctors(); loadClinics(); loadTreatments();
+                setAdminAuthToken('');
+                document.getElementById('loginError').style.display = 'none';
+                showAdminLayout();
+                bootstrapAdminData();
             } else {
                 document.getElementById('loginError').style.display = 'block';
             }
-        } catch (e) { showToast('Ошибка подключения к серверу', 'error'); }
+        } catch (e) {
+            const msg = String(e.message || '');
+            if (msg.toLowerCase().includes('invalid admin credentials') || msg.includes('401')) {
+                document.getElementById('loginError').style.display = 'block';
+            } else {
+                showToast('Ошибка подключения к серверу', 'error');
+            }
+        }
     }
     // Enter key handling now done via form submit
 
-    function handleLogout() {
+    async function tryRestoreBackendSession() {
+        if (!adminAuthToken) return false;
+        try {
+            await tryServerAdminVerify();
+            backendAuthEnabled = true;
+            showAdminLayout();
+            bootstrapAdminData();
+            return true;
+        } catch (e) {
+            setAdminAuthToken('');
+            backendAuthEnabled = false;
+            return false;
+        }
+    }
+
+    async function handleLogout() {
         currentPassword = '';
-        document.getElementById('loginOverlay').classList.remove('hidden');
-        document.getElementById('adminLayout').style.display = 'none';
+        if (adminAuthToken) {
+            try {
+                await tryServerAdminLogout();
+            } catch (_) {
+                // non-blocking
+            }
+        }
+        setAdminAuthToken('');
+        backendAuthEnabled = false;
+        hideAdminLayout();
         document.getElementById('loginPassword').value = '';
+        document.getElementById('loginError').textContent = 'Неверный пароль';
         document.getElementById('loginError').style.display = 'none';
     }
 
@@ -1279,6 +1399,13 @@
         previewDoctorPhoto(doctor?.photo_url || '');
         document.getElementById('docTags').value = doctor?.tags || '';
         document.getElementById('docLanguages').value = doctor?.languages || '';
+        document.getElementById('docSeoTitle').value = doctor?.seo_title || '';
+        document.getElementById('docSeoDescription').value = doctor?.seo_description || '';
+        document.getElementById('docSeoCanonicalUrl').value = doctor?.seo_canonical_url || '';
+        document.getElementById('docSeoRobots').value = doctor?.seo_robots || '';
+        document.getElementById('docSeoOgTitle').value = doctor?.seo_og_title || '';
+        document.getElementById('docSeoOgDescription').value = doctor?.seo_og_description || '';
+        document.getElementById('docSeoOgImage').value = doctor?.seo_og_image || '';
         document.getElementById('docOnline').value = doctor?.online_consultation ? 'true' : 'false';
         document.getElementById('docOrder').value = doctor?.order_num || 0;
         renderDoctorTreatmentsSelector(getDoctorTreatmentSlugs(doctor).join(','));
@@ -1306,6 +1433,8 @@
             const found = treatmentsList.find(t => normalizeSlug(t.slug || t.id) === slug);
             return found?.name_ru || slug;
         });
+        const seoCanonicalUrl = document.getElementById('docSeoCanonicalUrl').value.trim();
+        const seoOgImage = document.getElementById('docSeoOgImage').value.trim();
 
         if (!editId && !docId) { showToast('Укажите ID (slug) для врача', 'error'); return; }
         if (!editId && !isValidSlug(docId)) { showToast('ID должен содержать только латиницу, цифры и дефисы', 'error'); return; }
@@ -1328,6 +1457,15 @@
                 showToast('Профиль лечения не найден: ' + unknownTreatment, 'error');
                 return;
             }
+        }
+
+        if (seoCanonicalUrl && !/^https?:\/\//i.test(seoCanonicalUrl)) {
+            showToast('Canonical URL должен начинаться с http:// или https://', 'error');
+            return;
+        }
+        if (seoOgImage && !/^https?:\/\//i.test(seoOgImage)) {
+            showToast('OG image URL должен начинаться с http:// или https://', 'error');
+            return;
         }
 
         try {
@@ -1355,6 +1493,13 @@
             photo_url: document.getElementById('docPhotoUrl').value.trim(),
             tags: document.getElementById('docTags').value.trim(),
             languages: document.getElementById('docLanguages').value.trim(),
+            seo_title: document.getElementById('docSeoTitle').value.trim(),
+            seo_description: document.getElementById('docSeoDescription').value.trim(),
+            seo_canonical_url: seoCanonicalUrl,
+            seo_robots: document.getElementById('docSeoRobots').value.trim(),
+            seo_og_title: document.getElementById('docSeoOgTitle').value.trim(),
+            seo_og_description: document.getElementById('docSeoOgDescription').value.trim(),
+            seo_og_image: seoOgImage,
             treatment_slugs: selectedTreatmentSlugs.join(','),
             treatment_names: selectedTreatmentNames.join(','),
             online_consultation: document.getElementById('docOnline').value === 'true',
@@ -1837,3 +1982,5 @@
         // Reload pages to show newly created ones
         await loadPages();
     }
+
+    tryRestoreBackendSession();

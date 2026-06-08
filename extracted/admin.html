@@ -371,6 +371,20 @@
             </div>
             <div class="form-group"><label>Описание</label><textarea id="docDescription" placeholder="Биография, опыт, достижения...&#10;Используйте перенос строки для разделения абзацев." rows="6"></textarea></div>
             <div class="form-group"><label>URL фото</label><input type="text" id="docPhotoUrl" placeholder="https://..." oninput="previewDoctorPhoto(this.value)"><small>Вставьте ссылку на фотографию врача. Превью появится автоматически.</small><div id="docPhotoPreview" style="margin-top:8px;"></div></div>
+            <div class="admin-card__title" style="margin:8px 0 12px;"><i class="fas fa-magnifying-glass-chart"></i> Расширенный SEO</div>
+            <div class="form-row">
+                <div class="form-group"><label>SEO Title (override)</label><input type="text" id="docSeoTitle" placeholder="Опционально: кастомный title"></div>
+                <div class="form-group"><label>SEO Description (override)</label><input type="text" id="docSeoDescription" placeholder="Опционально: кастомный meta description"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>Canonical URL</label><input type="text" id="docSeoCanonicalUrl" placeholder="https://example.com/vrachi/slug.html"></div>
+                <div class="form-group"><label>Robots</label><input type="text" id="docSeoRobots" placeholder="index, follow"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>OG Title</label><input type="text" id="docSeoOgTitle" placeholder="Опционально: OpenGraph title"></div>
+                <div class="form-group"><label>OG Description</label><input type="text" id="docSeoOgDescription" placeholder="Опционально: OpenGraph description"></div>
+            </div>
+            <div class="form-group"><label>OG Image URL</label><input type="text" id="docSeoOgImage" placeholder="https://.../image.jpg"><small>Если пусто — используется фото врача</small></div>
             <div class="form-row">
                 <div class="form-group"><label>Теги (через запятую)</label><input type="text" id="docTags" placeholder="Рак молочной железы, Иммунотерапия"></div>
                 <div class="form-group"><label>Языки</label><input type="text" id="docLanguages" placeholder="Русский, Иврит, Английский"></div>
@@ -380,6 +394,20 @@
                 <div id="docTreatmentsSelect" style="max-height:160px;overflow:auto;border:1.5px solid var(--border);border-radius:8px;padding:10px;background:var(--white);"></div>
                 <small>Выберите один или несколько профилей лечения для привязки врача</small>
             </div>
+            <div class="admin-card__title" style="margin:12px 0 10px;"><i class="fas fa-magnifying-glass-chart"></i> Расширенный SEO редактор</div>
+            <div class="form-row">
+                <div class="form-group"><label>SEO Title (override)</label><input type="text" id="docSeoTitle" placeholder="Проф. Иванов — онколог в Израиле"></div>
+                <div class="form-group"><label>Canonical URL</label><input type="text" id="docSeoCanonicalUrl" placeholder="https://taurus-medical.com/vrachi/ivanov.html"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>SEO Description (override)</label><textarea id="docSeoDescription" rows="3" placeholder="Краткое SEO описание профиля врача"></textarea></div>
+                <div class="form-group"><label>Robots</label><input type="text" id="docSeoRobots" placeholder="index, follow"><small>Примеры: index, follow / noindex, nofollow</small></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>OG Title</label><input type="text" id="docSeoOgTitle" placeholder="Open Graph заголовок"></div>
+                <div class="form-group"><label>OG Image URL</label><input type="text" id="docSeoOgImage" placeholder="https://.../doctor-og.jpg"></div>
+            </div>
+            <div class="form-group"><label>OG Description</label><textarea id="docSeoOgDescription" rows="3" placeholder="Open Graph описание"></textarea></div>
             <div class="form-row">
                 <div class="form-group"><label>Онлайн-консультация</label><select id="docOnline"><option value="true">Да</option><option value="false">Нет</option></select></div>
                 <div class="form-group"><label>Порядок отображения</label><input type="number" id="docOrder" value="0"></div>
@@ -395,66 +423,4 @@
     <div class="modal-overlay" id="clinicModal">
         <div class="modal-box">
             <h3 id="clinicModalTitle">Добавить клинику</h3>
-            <input type="hidden" id="clinicEditId">
-            <div class="form-row">
-                <div class="form-group"><label>Название (русский)</label><input type="text" id="clinicNameRu" placeholder="Медицинский центр Шиба"></div>
-                <div class="form-group"><label>Название (English)</label><input type="text" id="clinicNameEn" placeholder="Sheba Medical Center"></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>URL slug</label><input type="text" id="clinicSlug" placeholder="sheba-tel-hashomer"></div>
-                <div class="form-group"><label>Город</label><input type="text" id="clinicCity" placeholder="Рамат-Ган"></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>Тип</label><select id="clinicType"><option value="государственная">Государственная</option><option value="частная">Частная</option></select></div>
-                <div class="form-group"><label>Иконка (FA class)</label><input type="text" id="clinicIcon" placeholder="fas fa-hospital"></div>
-            </div>
-            <div class="form-group"><label>Краткое описание (для листинга)</label><textarea id="clinicShortDesc" placeholder="Краткое описание для карточки на странице клиник" rows="3"></textarea></div>
-            <div class="form-group"><label>Полное описание</label><textarea id="clinicDescription" placeholder="Полное описание клиники" rows="5"></textarea></div>
-            <div class="form-row">
-                <div class="form-group"><label>Специализации (через запятую)</label><input type="text" id="clinicSpecialties" placeholder="Онкология, Кардиология, Нейрохирургия"></div>
-                <div class="form-group"><label>Кол-во коек</label><input type="text" id="clinicBeds" placeholder="2000+"></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>Кол-во отделений</label><input type="text" id="clinicDepartments" placeholder="200+"></div>
-                <div class="form-group"><label>URL изображения</label><input type="text" id="clinicImageUrl" placeholder="https://..."></div>
-            </div>
-            <div class="form-group"><label>Порядок отображения</label><input type="number" id="clinicOrder" value="0"></div>
-            <div style="display:flex;gap:12px;margin-top:16px;">
-                <button class="btn btn--primary" onclick="saveClinic()"><i class="fas fa-save"></i> Сохранить</button>
-                <button class="btn btn--secondary" onclick="closeClinicModal()"><i class="fas fa-times"></i> Отмена</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- TREATMENT MODAL -->
-    <div class="modal-overlay" id="treatmentModal">
-        <div class="modal-box">
-            <h3 id="treatmentModalTitle">Добавить профиль лечения</h3>
-            <input type="hidden" id="treatmentEditId">
-            <div class="form-row">
-                <div class="form-group"><label>Slug (ID)</label><input type="text" id="treatmentSlug" placeholder="onkologiya" pattern="[a-z0-9\-]+"><small>Латиница, цифры и дефис</small></div>
-                <div class="form-group"><label>Активен</label><select id="treatmentActive"><option value="true">Да</option><option value="false">Нет</option></select></div>
-            </div>
-            <div class="form-row">
-                <div class="form-group"><label>Название (русский)</label><input type="text" id="treatmentNameRu" placeholder="Онкология"></div>
-                <div class="form-group"><label>Название (English)</label><input type="text" id="treatmentNameEn" placeholder="Oncology"></div>
-            </div>
-            <div class="form-group"><label>Краткое описание</label><textarea id="treatmentShortDesc" rows="3" placeholder="Краткое описание профиля лечения"></textarea></div>
-            <div class="form-group"><label>Полное описание</label><textarea id="treatmentDescription" rows="5" placeholder="Подробное описание лечения"></textarea></div>
-            <div class="form-row">
-                <div class="form-group"><label>Теги (через запятую)</label><input type="text" id="treatmentTags" placeholder="рак, диагностика, иммунотерапия"></div>
-                <div class="form-group"><label>Порядок отображения</label><input type="number" id="treatmentOrder" value="0"></div>
-            </div>
-            <div style="display:flex;gap:12px;margin-top:16px;">
-                <button class="btn btn--primary" onclick="saveTreatment()"><i class="fas fa-save"></i> Сохранить</button>
-                <button class="btn btn--secondary" onclick="closeTreatmentModal()"><i class="fas fa-times"></i> Отмена</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- TOAST -->
-    <div class="toast" id="toast"></div>
-
-    <script src="js/admin.js"></script>
-</body>
-</html>
+        

@@ -18,11 +18,14 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const PORT = Number(process.env.PORT || 8787);
 const TABLES_API_BASE = (process.env.TABLES_API_BASE || 'http://localhost:8788/tables').replace(/\/$/, '');
 const ADMIN_PUBLISH_TOKEN = process.env.ADMIN_PUBLISH_TOKEN || '';
 const DEFAULT_SITE_BASE_URL = (process.env.SITE_BASE_URL || 'https://taurus-medical.com').replace(/\/$/, '');
+const ADMIN_AUTH_SECRET = process.env.ADMIN_AUTH_SECRET || 'taurus-admin-auth-secret';
+const ADMIN_AUTH_TTL_SEC = Number(process.env.ADMIN_AUTH_TTL_SEC || 8 * 60 * 60);
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const DOCTORS_DIR = path.join(PROJECT_ROOT, 'vrachi');
@@ -97,7 +100,14 @@ function sanitizeDoctor(raw) {
     photo_url: safePhotoUrl(raw?.photo_url),
     tags: parseCsv(raw?.tags),
     languages: parseCsv(raw?.languages),
-    online_consultation: !!raw?.online_consultation
+    online_consultation: !!raw?.online_consultation,
+    seo_title: String(raw?.seo_title || '').trim(),
+    seo_description: String(raw?.seo_description || '').trim(),
+    seo_og_title: String(raw?.seo_og_title || '').trim(),
+    seo_og_description: String(raw?.seo_og_description || '').trim(),
+    seo_og_image: safePhotoUrl(raw?.seo_og_image || raw?.photo_url),
+    seo_canonical_url: String(raw?.seo_canonical_url || '').trim(),
+    seo_robots: String(raw?.seo_robots || '').trim()
   };
 }
 
@@ -146,9 +156,14 @@ function buildDoctorStaticPageHtml(rawDoctor) {
   if (!isValidSlug(doctor.id)) throw new Error('Doctor id must match [a-z0-9-]');
   if (!doctor.name_ru) throw new Error('Doctor name_ru is required');
 
-  const title = `${doctor.name_ru} — ${doctor.specialty || 'Врач'} | Taurus Medical Experts`;
-  const metaDescription = buildDoctorSeoMetaDescription(doctor);
+  const title = doctor.seo_title || `${doctor.name_ru} — ${doctor.specialty || 'Врач'} | Taurus Medical Experts`;
+  const metaDescription = doctor.seo_description || buildDoctorSeoMetaDescription(doctor);
   const keywords = buildDoctorSeoKeywords(doctor);
+  const robotsContent = doctor.seo_robots || 'index, follow';
+  const canonicalUrl = doctor.seo_canonical_url || `vrachi/${encodeURIComponent(doctor.id)}.html`;
+  const ogTitle = doctor.seo_og_title || title;
+  const ogDescription = doctor.seo_og_description || metaDescription;
+  const ogImage = doctor.seo_og_image || doctor.photo_url;
   const descriptionHtml = buildDoctorDescriptionHtml(doctor.description);
   const directionHtml = buildDoctorDirectionsHtml(doctor.specialty);
 
@@ -174,7 +189,13 @@ function buildDoctorStaticPageHtml(rawDoctor) {
     <title>${escapeHtml(title)}</title>
     <meta name="description" content="${escapeHtml(metaDescription)}">
     <meta name="keywords" content="${escapeHtml(keywords)}">
-    <meta name="robots" content="index, follow">
+    <meta name="robots" content="${escapeHtml(robotsContent)}">
+    <link rel="canonical" href="${escapeHtml(canonicalUrl)}">
+    <meta property="og:type" content="profile">
+    <meta property="og:title" content="${escapeHtml(ogTitle)}">
+    <meta property="og:description" content="${escapeHtml(ogDescription)}">
+    ${ogImage ? `<meta property="og:image" content="${escapeHtml(ogImage)}">` : ''}
+    <meta property="og:url" content="${escapeHtml(canonicalUrl)}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -258,10 +279,77 @@ function sendJson(res, code, payload) {
   res.end(body);
 }
 
+function getBearerToken(req) {
+  const auth = String(req?.headers?.authorization || '').trim();
+  if (!auth.toLowerCase().startsWith('bearer ')) return '';
+  return auth.slice(7).trim();
+}
+
+function base64UrlEncode(input) {
+  return Buffer.from(input)
+    .toString('base64')
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+}
+
+function base64UrlDecode(input) {
+  const normalized = String(input || '').replace(/-/g, '+').replace(/_/g, '/');
+  const padLength = (4 - (normalized.length % 4)) % 4;
+  const padded = normalized + '='.repeat(padLength);
+  return Buffer.from(padded, 'base64').toString('utf8');
+}
+
+function signAuthPayload(payload) {
+  return base64UrlEncode(
+    crypto.createHmac('sha256', ADMIN_AUTH_SECRET).update(payload).digest()
+  );
+}
+
+function createAdminSessionToken() {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const body = {
+    sub: 'admin',
+    iat: nowSec,
+    exp: nowSec + ADMIN_AUTH_TTL_SEC
+  };
+  const encodedBody = base64UrlEncode(JSON.stringify(body));
+  const signature = signAuthPayload(encodedBody);
+  return `${encodedBody}.${signature}`;
+}
+
+function verifyAdminSessionToken(token) {
+  try {
+    const raw = String(token || '');
+    const [encodedBody, signature] = raw.split('.');
+    if (!encodedBody || !signature) return false;
+
+    const expected = signAuthPayload(encodedBody);
+    if (signature !== expected) return false;
+
+    const body = JSON.parse(base64UrlDecode(encodedBody));
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (!body || body.sub !== 'admin' || !body.exp || nowSec >= body.exp) return false;
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function fetchAdminPassword() {
+  try {
+    const settings = await fetchTableRows('site_settings', 500);
+    const record = settings.find(item => String(item?.key || '').trim() === 'admin_password');
+    return String(record?.value || '').trim();
+  } catch (e) {
+    return '';
+  }
+}
+
 function assertAuthorized(req) {
-  if (!ADMIN_PUBLISH_TOKEN) return true;
-  const auth = req.headers.authorization || '';
-  return auth === `Bearer ${ADMIN_PUBLISH_TOKEN}`;
+  const token = getBearerToken(req);
+  if (ADMIN_PUBLISH_TOKEN && token === ADMIN_PUBLISH_TOKEN) return true;
+  return verifyAdminSessionToken(token);
 }
 
 async function fetchDoctorById(id) {
@@ -606,6 +694,47 @@ async function handleSitemapPublish(req, res) {
   }
 }
 
+async function handleAdminAuthLogin(req, res) {
+  try {
+    const body = await readJsonBody(req);
+    const password = String(body?.password || '').trim();
+    if (!password) {
+      sendJson(res, 400, { ok: false, error: 'password is required' });
+      return;
+    }
+
+    const currentPassword = await fetchAdminPassword();
+    if (!currentPassword || password !== currentPassword) {
+      sendJson(res, 401, { ok: false, error: 'Invalid admin credentials' });
+      return;
+    }
+
+    const token = createAdminSessionToken();
+    sendJson(res, 200, {
+      ok: true,
+      token,
+      token_type: 'Bearer',
+      expires_in_sec: ADMIN_AUTH_TTL_SEC
+    });
+  } catch (e) {
+    sendJson(res, 400, { ok: false, error: e.message || 'Admin auth failed' });
+  }
+}
+
+function handleAdminAuthVerify(req, res) {
+  const token = getBearerToken(req);
+  const valid = verifyAdminSessionToken(token) || (ADMIN_PUBLISH_TOKEN && token === ADMIN_PUBLISH_TOKEN);
+  if (!valid) {
+    sendJson(res, 401, { ok: false, error: 'Invalid or expired token' });
+    return;
+  }
+  sendJson(res, 200, { ok: true, authenticated: true });
+}
+
+function handleAdminAuthLogout(req, res) {
+  sendJson(res, 200, { ok: true, logged_out: true });
+}
+
 async function handleValidateDoctorRelations(req, res) {
   try {
     const body = await readJsonBody(req);
@@ -705,82 +834,109 @@ async function handleTreatmentDelete(req, res, treatmentId) {
   }
 }
 
-const server = http.createServer(async (req, res) => {
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS'
-    });
-    res.end();
-    return;
-  }
-
-  const url = new URL(req.url, `http://${req.headers.host}`);
-
-  if (req.method === 'GET' && url.pathname === '/health') {
-    sendJson(res, 200, { ok: true, service: 'publish-server', port: PORT });
-    return;
-  }
-
-  if (req.method === 'POST') {
-    if (!assertAuthorized(req)) {
-      sendJson(res, 401, { ok: false, error: 'Unauthorized publish request' });
+function createPublishServer() {
+  return http.createServer(async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS'
+      });
+      res.end();
       return;
     }
 
-    const doctorRoute = url.pathname.match(/^\/admin\/publish\/doctor\/([a-z0-9\-]+)$/i);
-    if (doctorRoute) {
-      const dryRun = url.searchParams.get('dry_run') === '1' || url.searchParams.get('mode') === 'dry-run';
-      await handlePublishOne(req, res, doctorRoute[1], dryRun);
+    const url = new URL(req.url, `http://${req.headers.host}`);
+
+    if (req.method === 'GET' && url.pathname === '/health') {
+      sendJson(res, 200, { ok: true, service: 'publish-server', port: PORT });
       return;
     }
 
-    if (url.pathname === '/admin/publish/doctors/bulk') {
-      await handlePublishBulk(req, res);
+    if (req.method === 'GET' && url.pathname === '/admin/auth/verify') {
+      handleAdminAuthVerify(req, res);
       return;
     }
 
-    if (url.pathname === '/admin/publish/sitemap') {
-      await handleSitemapPublish(req, res);
+    if (req.method === 'POST' && url.pathname === '/admin/auth/login') {
+      await handleAdminAuthLogin(req, res);
       return;
     }
 
-    if (url.pathname === '/admin/relations/validate-doctor') {
-      await handleValidateDoctorRelations(req, res);
+    if (req.method === 'POST' && url.pathname === '/admin/auth/logout') {
+      handleAdminAuthLogout(req, res);
       return;
     }
 
-    if (url.pathname === '/admin/seo/static-statuses') {
-      await handleStaticStatusBatch(req, res);
-      return;
+    if (req.method === 'POST') {
+      if (!assertAuthorized(req)) {
+        sendJson(res, 401, { ok: false, error: 'Unauthorized publish request' });
+        return;
+      }
+
+      const doctorRoute = url.pathname.match(/^\/admin\/publish\/doctor\/([a-z0-9\-]+)$/i);
+      if (doctorRoute) {
+        const dryRun = url.searchParams.get('dry_run') === '1' || url.searchParams.get('mode') === 'dry-run';
+        await handlePublishOne(req, res, doctorRoute[1], dryRun);
+        return;
+      }
+
+      if (url.pathname === '/admin/publish/doctors/bulk') {
+        await handlePublishBulk(req, res);
+        return;
+      }
+
+      if (url.pathname === '/admin/publish/sitemap') {
+        await handleSitemapPublish(req, res);
+        return;
+      }
+
+      if (url.pathname === '/admin/relations/validate-doctor') {
+        await handleValidateDoctorRelations(req, res);
+        return;
+      }
+
+      if (url.pathname === '/admin/seo/static-statuses') {
+        await handleStaticStatusBatch(req, res);
+        return;
+      }
     }
-  }
 
-  if (req.method === 'DELETE') {
-    if (!assertAuthorized(req)) {
-      sendJson(res, 401, { ok: false, error: 'Unauthorized publish request' });
-      return;
+    if (req.method === 'DELETE') {
+      if (!assertAuthorized(req)) {
+        sendJson(res, 401, { ok: false, error: 'Unauthorized publish request' });
+        return;
+      }
+
+      const clinicRoute = url.pathname.match(/^\/admin\/clinics\/([^/]+)$/i);
+      if (clinicRoute) {
+        await handleClinicDelete(req, res, clinicRoute[1]);
+        return;
+      }
+
+      const treatmentRoute = url.pathname.match(/^\/admin\/treatments\/([^/]+)$/i);
+      if (treatmentRoute) {
+        await handleTreatmentDelete(req, res, treatmentRoute[1]);
+        return;
+      }
     }
 
-    const clinicRoute = url.pathname.match(/^\/admin\/clinics\/([^/]+)$/i);
-    if (clinicRoute) {
-      await handleClinicDelete(req, res, clinicRoute[1]);
-      return;
-    }
+    sendJson(res, 404, { ok: false, error: 'Not found' });
+  });
+}
 
-    const treatmentRoute = url.pathname.match(/^\/admin\/treatments\/([^/]+)$/i);
-    if (treatmentRoute) {
-      await handleTreatmentDelete(req, res, treatmentRoute[1]);
-      return;
-    }
-  }
+if (require.main === module) {
+  const server = createPublishServer();
+  server.listen(PORT, () => {
+    console.log(`Publish server started on http://0.0.0.0:${PORT}`);
+    console.log(`TABLES_API_BASE=${TABLES_API_BASE}`);
+    console.log(`PROJECT_ROOT=${PROJECT_ROOT}`);
+  });
+}
 
-  sendJson(res, 404, { ok: false, error: 'Not found' });
-});
-
-server.listen(PORT, () => {
-  console.log(`Publish server started on http://0.0.0.0:${PORT}`);
-  console.log(`TABLES_API_BASE=${TABLES_API_BASE}`);
-  console.log(`PROJECT_ROOT=${PROJECT_ROOT}`);
-});
+module.exports = {
+  createPublishServer,
+  checkStaticDoctorFileExists,
+  buildStaticStatusMap,
+  verifyAdminSessionToken
+};
