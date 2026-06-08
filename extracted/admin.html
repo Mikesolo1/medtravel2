@@ -457,6 +457,8 @@
     <script>
     // ===== ADMIN PANEL LOGIC =====
     const API_BASE = 'tables';
+    const PUBLISH_API_BASE = (window.__PUBLISH_API_BASE__ || '').replace(/\/$/, '');
+    const PUBLISH_API_TOKEN = window.__PUBLISH_API_TOKEN__ || '';
     let currentPassword = '';
     let settings = {};
     let pages = [];
@@ -638,7 +640,7 @@
     </style>
     <script type="application/ld+json">
     ${jsonLd}
-    </script>
+    ${'</scr' + 'ipt>'}
 </head>
 <body>
     <header class="header" id="header"><div class="container"><div class="header__inner">
@@ -692,8 +694,8 @@
         <p class="footer__disclaimer">Мы соблюдаем конфиденциальность и работаем по согласованным этапам и договору.</p>
         <p class="footer__copy">© 2024–2026 Taurus Medical Experts. Все права защищены.</p>
     </div></div></footer>
-    <script src="../js/main.js"></script>
-    <script src="../js/doctor-profile.js" data-doctor-id="${escapeHtml(doctor.id)}"></script>
+    ${'<script src="../js/main.js"></' + 'script>'}
+    ${'<script src="../js/doctor-profile.js" data-doctor-id="' + escapeHtml(doctor.id) + '"></' + 'script>'}
 </body>
 </html>`;
     }
@@ -742,6 +744,60 @@
         return `"${raw.replace(/"/g, '""')}"`;
     }
 
+    function getPublishEndpoint(path) {
+        if (PUBLISH_API_BASE) return `${PUBLISH_API_BASE}${path}`;
+        return path;
+    }
+
+    function getPublishHeaders() {
+        const headers = { 'Content-Type': 'application/json' };
+        if (PUBLISH_API_TOKEN) headers.Authorization = `Bearer ${PUBLISH_API_TOKEN}`;
+        return headers;
+    }
+
+    async function tryServerPublishDoctor(doctor, dryRun = false) {
+        const normalizedId = normalizeSlug(doctor?.id);
+        if (!normalizedId || !isValidSlug(normalizedId)) throw new Error('Невалидный ID для server publish');
+
+        const query = dryRun ? '?mode=dry-run' : '';
+        const endpoint = getPublishEndpoint(`/admin/publish/doctor/${encodeURIComponent(normalizedId)}${query}`);
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: getPublishHeaders(),
+            body: JSON.stringify({ doctor })
+        });
+
+        if (!response.ok) {
+            let text = `HTTP ${response.status}`;
+            try { text = await response.text(); } catch (_) {}
+            throw new Error(`server publish failed: ${text}`);
+        }
+
+        let payload = {};
+        try { payload = await response.json(); } catch (_) {}
+        if (!payload?.ok) throw new Error(payload?.error || 'server publish returned non-ok payload');
+        return payload;
+    }
+
+    async function tryServerBulkPublish(doctors) {
+        const endpoint = getPublishEndpoint('/admin/publish/doctors/bulk');
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: getPublishHeaders(),
+            body: JSON.stringify({ doctors })
+        });
+
+        if (!response.ok) {
+            let text = `HTTP ${response.status}`;
+            try { text = await response.text(); } catch (_) {}
+            throw new Error(`server bulk publish failed: ${text}`);
+        }
+
+        const payload = await response.json();
+        if (!payload?.ok) throw new Error(payload?.error || 'server bulk publish returned non-ok payload');
+        return payload;
+    }
+
     async function publishDoctorStaticPageById(id) {
         const doctor = doctorsList.find(d => d.id === id);
         if (!doctor) {
@@ -749,10 +805,20 @@
             return;
         }
         try {
+            try {
+                await tryServerPublishDoctor(doctor, false);
+                doctorProfileStatusCache[id] = true;
+                renderDoctorsTable();
+                showToast(`SEO-страница ${normalizeSlug(id)}.html опубликована на сервере`, 'success');
+                return;
+            } catch (serverError) {
+                console.warn('Server publish unavailable, fallback to download:', serverError);
+            }
+
             const fileName = downloadDoctorStaticPage(doctor);
             doctorProfileStatusCache[id] = true;
             renderDoctorsTable();
-            showToast(`SEO-страница ${fileName} сформирована. Загрузите файл в /vrachi/.`, 'success');
+            showToast(`SEO-страница ${fileName} сформирована локально. Загрузите файл в /vrachi/.`, 'success');
         } catch (e) {
             showToast('Ошибка SEO-публикации: ' + e.message, 'error');
         }
@@ -772,15 +838,27 @@
             const generated = [];
             const failed = [];
 
-            fallbackDoctors.forEach((doctor) => {
-                try {
-                    const fileName = downloadDoctorStaticPage(doctor);
-                    generated.push(fileName);
-                    doctorProfileStatusCache[doctor.id] = true;
-                } catch (e) {
-                    failed.push(`${doctor.id}: ${e.message}`);
-                }
-            });
+            try {
+                const bulkResult = await tryServerBulkPublish(fallbackDoctors);
+                (bulkResult.published || []).forEach(item => {
+                    generated.push(item.file_name || `${item.id}.html`);
+                    if (item.id) doctorProfileStatusCache[item.id] = true;
+                });
+                (bulkResult.failed || []).forEach(item => {
+                    failed.push(`${item.id}: ${item.error}`);
+                });
+            } catch (serverBulkError) {
+                console.warn('Server bulk publish unavailable, fallback to local download:', serverBulkError);
+                fallbackDoctors.forEach((doctor) => {
+                    try {
+                        const fileName = downloadDoctorStaticPage(doctor);
+                        generated.push(fileName);
+                        doctorProfileStatusCache[doctor.id] = true;
+                    } catch (e) {
+                        failed.push(`${doctor.id}: ${e.message}`);
+                    }
+                });
+            }
 
             renderDoctorsTable();
 
@@ -934,9 +1012,9 @@
                 '',
                 'Recommended flow:',
                 '1) Open manifest CSV and filter seo_status = fallback.',
-                '2) Generate files via admin bulk publish/export package.',
-                '3) Place resulting *.html files into /vrachi/.',
-                '4) Deploy and run SEO status check again in admin.',
+                '2) Preferred: call server endpoint POST /admin/publish/doctors/bulk.',
+                '3) Fallback: generate files via admin bulk publish/export package.',
+                '4) Place resulting *.html files into /vrachi/ and deploy.',
                 '',
                 'Fallback doctor IDs:',
                 ...rows.filter(r => r[7] === 'fallback').map(r => `- ${r[0]}`)
@@ -1480,10 +1558,19 @@
                 // Ignore non-JSON response body
             }
 
-            const fileName = downloadDoctorStaticPage(savedDoctor);
-            doctorProfileStatusCache[savedDoctor.id] = true;
+            let publishMessage = '';
+            try {
+                await tryServerPublishDoctor(savedDoctor, false);
+                doctorProfileStatusCache[savedDoctor.id] = true;
+                publishMessage = `SEO-страница ${normalizeSlug(savedDoctor.id)}.html опубликована сервером.`;
+            } catch (serverError) {
+                console.warn('Server publish unavailable after save, fallback to local download:', serverError);
+                const fileName = downloadDoctorStaticPage(savedDoctor);
+                doctorProfileStatusCache[savedDoctor.id] = true;
+                publishMessage = `Server publish недоступен. Файл ${fileName} сформирован локально — загрузите его в /vrachi/.`;
+            }
 
-            showToast(`Врач сохранён. SEO-страница ${fileName} сформирована для /vrachi/.`, 'success');
+            showToast(`Врач сохранён. ${publishMessage}`, 'success');
             closeDoctorModal();
             loadDoctors();
         } catch (e) { showToast('Ошибка сохранения врача: ' + e.message, 'error'); }
