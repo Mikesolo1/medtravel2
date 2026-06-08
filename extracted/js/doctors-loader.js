@@ -50,7 +50,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
 
         grid.innerHTML = doctors.map(d => renderDoctorCard(d)).join('');
-        upgradeDoctorProfileLinks(grid, '../');
+        // Ссылки сразу ведут на статические vrachi/{id}.html — апгрейд не нужен.
     } catch (e) {
         grid.innerHTML = '<p style="color:var(--color-text-light);font-size:0.9rem;">Не удалось загрузить список врачей. Попробуйте позже.</p>';
     }
@@ -71,7 +71,8 @@ function safePhotoUrl(url) {
 }
 
 function getDoctorProfileFallbackUrl(d) {
-    return `../vrachi/template.html?id=${encodeURIComponent(d.id || '')}`;
+    // Все врачи имеют статическую страницу vrachi/{id}.html (генерируется из seed).
+    return `../vrachi/${encodeURIComponent(d.id || '')}.html`;
 }
 
 function renderDoctorCard(d) {
@@ -111,33 +112,4 @@ function renderDoctorCard(d) {
     </div>`;
 }
 
-async function upgradeDoctorProfileLinks(container, base) {
-    const links = container.querySelectorAll('.js-doctor-profile-link[data-doctor-id]');
-    const cache = {};
 
-    for (const link of links) {
-        const doctorId = link.dataset.doctorId;
-        if (!doctorId) continue;
-
-        if (cache[doctorId] === undefined) {
-            cache[doctorId] = await staticProfileExists(`${base}vrachi/${doctorId}.html`);
-        }
-
-        if (cache[doctorId]) {
-            link.href = `${base}vrachi/${doctorId}.html`;
-        }
-    }
-}
-
-async function staticProfileExists(url) {
-    try {
-        const headResp = await fetch(url, { method: 'HEAD' });
-        if (headResp.ok) return true;
-        if (headResp.status !== 405) return false;
-
-        const getResp = await fetch(url, { method: 'GET' });
-        return getResp.ok;
-    } catch (e) {
-        return false;
-    }
-}

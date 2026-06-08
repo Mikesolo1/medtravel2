@@ -88,7 +88,7 @@
             }
 
             grid.innerHTML = doctors.map(function(d) { return renderCard(d, base); }).join('');
-            upgradeDoctorProfileLinks(grid, base);
+            // Ссылки сразу ведут на статические vrachi/{id}.html — апгрейд не нужен.
         } catch (e) {
             grid.innerHTML = '<p style="color:var(--color-text-light);font-size:0.9rem;">Не удалось загрузить список врачей. Попробуйте позже.</p>';
         }
@@ -109,7 +109,9 @@
     }
 
     function getDoctorProfileFallbackUrl(d, base) {
-        return base + 'vrachi/template.html?id=' + encodeURIComponent(d.id || '');
+        // Все врачи имеют статическую страницу vrachi/{id}.html (генерируется из seed).
+        // Ссылаемся напрямую — не зависит от БД и работает офлайн.
+        return base + 'vrachi/' + encodeURIComponent(d.id || '') + '.html';
     }
 
     // Маппинг slug направления -> ключ фильтра на vrachi.html (data-filter)
@@ -175,38 +177,6 @@
             '<div class="doctor-card__tags">' + tags + onlineTag + langBadge + '</div>' +
             '<a href="' + base + 'kontakty.html" class="doctor-card__btn"><i class="fas fa-calendar-check"></i> Записаться на консультацию</a>' +
         '</div>';
-    }
-
-    async function upgradeDoctorProfileLinks(container, base) {
-        var links = container.querySelectorAll('.js-doctor-profile-link[data-doctor-id]');
-        var cache = {};
-
-        for (var i = 0; i < links.length; i++) {
-            var link = links[i];
-            var doctorId = link.getAttribute('data-doctor-id');
-            if (!doctorId) continue;
-
-            if (typeof cache[doctorId] === 'undefined') {
-                cache[doctorId] = await staticProfileExists(base + 'vrachi/' + doctorId + '.html');
-            }
-
-            if (cache[doctorId]) {
-                link.href = base + 'vrachi/' + doctorId + '.html';
-            }
-        }
-    }
-
-    async function staticProfileExists(url) {
-        try {
-            var headResp = await fetch(url, { method: 'HEAD' });
-            if (headResp.ok) return true;
-            if (headResp.status !== 405) return false;
-
-            var getResp = await fetch(url, { method: 'GET' });
-            return getResp.ok;
-        } catch (e) {
-            return false;
-        }
     }
 
     // Execute: if DOM is ready, run immediately; otherwise wait
