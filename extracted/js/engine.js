@@ -123,48 +123,6 @@
             const heroText = document.querySelector('.hero__text') || document.querySelector('.page-hero__text');
             if (heroText) heroText.textContent = page.hero_text;
         }
-        // Update editable content blocks
-        applyContentBlocks(page);
-    }
-
-    // ===== EDITABLE CONTENT BLOCKS =====
-    function parseBlocks(raw) {
-        if (Array.isArray(raw)) return raw;
-        if (typeof raw === 'string' && raw.trim()) {
-            try { const v = JSON.parse(raw); return Array.isArray(v) ? v : []; }
-            catch (e) { return []; }
-        }
-        return [];
-    }
-
-    function esc(v) {
-        return String(v == null ? '' : v)
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    }
-
-    function renderBlock(b) {
-        const alt = b.alt ? ' content-section--alt' : '';
-        const label = b.label ? `<div class="section__label">${esc(b.label)}</div>` : '';
-        const title = b.title ? `<h2 class="section__title">${esc(b.title)}</h2>` : '';
-        let body = '';
-        if (b.type === 'features' && Array.isArray(b.items)) {
-            body = `<div class="feature-list">` + b.items.map(it =>
-                `<div class="feature-list__item"><i class="fas fa-check-circle"></i><span>${esc(it)}</span></div>`
-            ).join('') + `</div>`;
-        } else {
-            const paras = String(b.text || '').split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
-            body = paras.map(p => `<p class="section__text">${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
-        }
-        return `<section class="content-section${alt}"><div class="container">${label}${title}${body}</div></section>`;
-    }
-
-    function applyContentBlocks(page) {
-        const container = document.querySelector('[data-content-blocks]');
-        if (!container) return;
-        const blocks = parseBlocks(page.content_blocks);
-        if (!blocks.length) return;
-        container.innerHTML = blocks.map(renderBlock).join('');
     }
 
     // ===== TELEGRAM INTEGRATION =====
