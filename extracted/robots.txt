@@ -1,0 +1,15 @@
+# Robots.txt — Taurus Medical Experts
+# https://taurus-medical.com
+
+User-agent: *
+Allow: /
+
+# Запрет индексации служебных страниц
+Disallow: /admin.html
+Disallow: /vrachi/template.html
+
+# Sitemap
+Sitemap: https://taurus-medical.com/sitemap.xml
+
+# Crawl-delay (рекомендация)
+Crawl-delay: 1

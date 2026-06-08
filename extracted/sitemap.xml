@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <!-- Основные страницы -->
+  <url><loc>https://taurus-medical.com/index.html</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://taurus-medical.com/o-nas.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://taurus-medical.com/kliniki-izrailya.html</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://taurus-medical.com/otdeleniya.html</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi.html</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://taurus-medical.com/onkologiya.html</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://taurus-medical.com/patsientam.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://taurus-medical.com/otzyvy.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/kontakty.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+
+  <!-- Клиники -->
+  <url><loc>https://taurus-medical.com/kliniki/ikhilov-sourasky.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://taurus-medical.com/kliniki/sheba-tel-hashomer.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://taurus-medical.com/kliniki/rabin-beilinson.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://taurus-medical.com/kliniki/assuta.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://taurus-medical.com/kliniki/wolfson.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://taurus-medical.com/kliniki/herzliya-medical-center.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://taurus-medical.com/kliniki/medica-raphael.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+
+  <!-- Направления -->
+  <url><loc>https://taurus-medical.com/napravleniya/allergologiya.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://taurus-medical.com/napravleniya/gastroenterologiya.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://taurus-medical.com/napravleniya/gematologiya.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://taurus-medical.com/napravleniya/genetika.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://taurus-medical.com/napravleniya/ginekologiya.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://taurus-medical.com/napravleniya/geriatriya.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://taurus-medical.com/napravleniya/kardiologiya.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://taurus-medical.com/napravleniya/nevrologiya.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://taurus-medical.com/napravleniya/ortopediya.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://taurus-medical.com/napravleniya/urologiya.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+
+  <!-- Врачи (профили) -->
+  <url><loc>https://taurus-medical.com/vrachi/inbar.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/merimsky.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/stefanski.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/ron.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/banai.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/raanani.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/lishansky.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/ram.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/konstantini.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/salay.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/kalganov.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/matskin.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/nado.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/galperin.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/israelit.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/grisaro.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/yaron.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/ben-or.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/hendzel.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/gur.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/napartsek.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/friedman.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/kemelman.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/rabinovich.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/scapa.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/vosko.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/lahav.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/migdal.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/raif.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/glok.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/ben-ari.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/konikoff.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/israeli-s.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/tavor.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/rybakovskaya.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/levin-d.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/salomon.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/noyman.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/teplicsky.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/vrachi/hagin.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+
+  <!-- Пациентам -->
+  <url><loc>https://taurus-medical.com/patsientam/prieezd-v-izrail.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/patsientam/programma-obsledovaniya.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://taurus-medical.com/patsientam/soputstvuyushchie-uslugi.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+</urlset>

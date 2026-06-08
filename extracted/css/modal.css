@@ -1,0 +1,169 @@
+/* ===== TAURUS MEDICAL — MODAL FORM STYLES ===== */
+
+.taurus-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.taurus-modal--active {
+    opacity: 1;
+    visibility: visible;
+}
+.taurus-modal__overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 31, 51, 0.6);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+.taurus-modal__box {
+    position: relative;
+    background: #fff;
+    border-radius: 16px;
+    padding: 40px;
+    max-width: 480px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 24px 64px rgba(30, 58, 95, 0.2);
+    transform: translateY(20px) scale(0.97);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.taurus-modal--active .taurus-modal__box {
+    transform: translateY(0) scale(1);
+}
+.taurus-modal__close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: var(--color-bg, #F7F9FB);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+    color: var(--color-text-light, #5A6B7F);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.taurus-modal__close:hover {
+    background: var(--color-border, #E2E8F0);
+    color: var(--color-text, #1F2D3D);
+}
+.taurus-modal__header {
+    margin-bottom: 28px;
+    text-align: center;
+}
+.taurus-modal__title {
+    font-size: 1.375rem;
+    font-weight: 700;
+    color: var(--color-primary, #1E3A5F);
+    margin-bottom: 8px;
+}
+.taurus-modal__subtitle {
+    font-size: 0.9375rem;
+    color: var(--color-text-light, #5A6B7F);
+    line-height: 1.5;
+}
+.taurus-modal__field {
+    margin-bottom: 16px;
+}
+.taurus-modal__field input,
+.taurus-modal__field textarea {
+    width: 100%;
+    padding: 14px 18px;
+    border: 1.5px solid var(--color-border, #E2E8F0);
+    border-radius: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9375rem;
+    color: var(--color-text, #1F2D3D);
+    background: #fff;
+    transition: all 0.2s;
+}
+.taurus-modal__field input:focus,
+.taurus-modal__field textarea:focus {
+    outline: none;
+    border-color: var(--color-secondary, #2BB3A3);
+    box-shadow: 0 0 0 3px rgba(43, 179, 163, 0.1);
+}
+.taurus-modal__field input::placeholder,
+.taurus-modal__field textarea::placeholder {
+    color: var(--color-text-lighter, #8A97A8);
+}
+.taurus-modal__field textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+.taurus-modal__submit {
+    width: 100%;
+    padding: 16px;
+    background: var(--color-accent, #F5A623);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+.taurus-modal__submit:hover {
+    background: #e6951a;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(245, 166, 35, 0.3);
+}
+.taurus-modal__submit:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none;
+}
+.taurus-modal__privacy {
+    margin-top: 14px;
+    font-size: 0.75rem;
+    color: var(--color-text-lighter, #8A97A8);
+    text-align: center;
+    line-height: 1.5;
+}
+.taurus-modal__success {
+    text-align: center;
+    padding: 20px 0;
+}
+.taurus-modal__success-icon {
+    font-size: 3rem;
+    color: var(--color-secondary, #2BB3A3);
+    margin-bottom: 16px;
+}
+.taurus-modal__success h3 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--color-primary, #1E3A5F);
+    margin-bottom: 8px;
+}
+.taurus-modal__success p {
+    font-size: 0.9375rem;
+    color: var(--color-text-light, #5A6B7F);
+}
+
+/* Mobile adjustments */
+@media (max-width: 480px) {
+    .taurus-modal__box {
+        padding: 28px 20px;
+        width: 95%;
+    }
+    .taurus-modal__title {
+        font-size: 1.25rem;
+    }
+}
