@@ -394,6 +394,23 @@
     let doctorsList = [];
     let clinicsList = [];
 
+    function normalizeSlug(value) {
+        return (value || '').trim().toLowerCase();
+    }
+
+    function isValidSlug(value) {
+        return /^[a-z0-9\-]+$/.test(value);
+    }
+
+    async function getErrorText(response) {
+        try {
+            const text = await response.text();
+            return text || `HTTP ${response.status}`;
+        } catch (e) {
+            return `HTTP ${response.status}`;
+        }
+    }
+
     // --- AUTH ---
     async function handleLogin() {
         const pwd = document.getElementById('loginPassword').value;
@@ -449,10 +466,11 @@
     async function loadPages() {
         try {
             const res = await fetch(`${API_BASE}/page_content?limit=100`);
+            if (!res.ok) throw new Error(await getErrorText(res));
             const data = await res.json();
             pages = data.data || [];
             renderPageSelector();
-        } catch (e) { showToast('Ошибка загрузки страниц', 'error'); }
+        } catch (e) { showToast('Ошибка загрузки страниц: ' + e.message, 'error'); }
     }
 
     function renderPageSelector() {
@@ -486,11 +504,12 @@
             hero_text: document.getElementById('editHeroText').value
         };
         try {
-            await fetch(`${API_BASE}/page_content/${selectedPageId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            const res = await fetch(`${API_BASE}/page_content/${selectedPageId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (!res.ok) throw new Error(await getErrorText(res));
             showToast('Контент страницы сохранён!', 'success');
             const idx = pages.findIndex(p => p.id === selectedPageId);
             if (idx >= 0) Object.assign(pages[idx], payload);
-        } catch (e) { showToast('Ошибка сохранения', 'error'); }
+        } catch (e) { showToast('Ошибка сохранения: ' + e.message, 'error'); }
     }
 
     function resetPageEditor() { if (selectedPageId) selectPage(selectedPageId); }
@@ -499,10 +518,11 @@
     async function loadDoctors() {
         try {
             const res = await fetch(`${API_BASE}/doctors?limit=100`);
+            if (!res.ok) throw new Error(await getErrorText(res));
             const data = await res.json();
             doctorsList = data.data || [];
             renderDoctorsTable();
-        } catch (e) { document.getElementById('doctorsBody').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;">Нет данных. Добавьте первого врача.</td></tr>'; }
+        } catch (e) { document.getElementById('doctorsBody').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;">Нет данных. Добавьте первого врача.</td></tr>'; showToast('Ошибка загрузки врачей: ' + e.message, 'error'); }
     }
 
     function renderDoctorsTable() {
@@ -555,55 +575,79 @@
 
     async function saveDoctor() {
         const editId = document.getElementById('doctorEditId').value;
-        const docId = document.getElementById('docId').value.trim();
+        const docId = normalizeSlug(document.getElementById('docId').value);
+        const nameRu = document.getElementById('docNameRu').value.trim();
+        const specialty = document.getElementById('docSpecialty').value.trim();
+        const clinicSlug = normalizeSlug(document.getElementById('docClinicSlug').value);
+
         if (!editId && !docId) { showToast('Укажите ID (slug) для врача', 'error'); return; }
-        if (!editId && !/^[a-z0-9\-]+$/.test(docId)) { showToast('ID должен содержать только латиницу, цифры и дефисы', 'error'); return; }
+        if (!editId && !isValidSlug(docId)) { showToast('ID должен содержать только латиницу, цифры и дефисы', 'error'); return; }
+        if (!nameRu) { showToast('Укажите ФИО врача', 'error'); return; }
+        if (!specialty) { showToast('Укажите специальность', 'error'); return; }
+
+        if (!editId && doctorsList.some(d => normalizeSlug(d.id) === docId)) {
+            showToast('Врач с таким ID уже существует', 'error');
+            return;
+        }
+
+        if (clinicSlug && clinicsList.length > 0 && !clinicsList.some(c => normalizeSlug(c.slug) === clinicSlug)) {
+            showToast('Указанная клиника (slug) не найдена в справочнике клиник', 'error');
+            return;
+        }
+
         const payload = {
-            name_ru: document.getElementById('docNameRu').value,
-            name_en: document.getElementById('docNameEn').value,
-            specialty: document.getElementById('docSpecialty').value,
-            position: document.getElementById('docPosition').value,
-            clinic_slug: document.getElementById('docClinicSlug').value,
-            clinic_name: document.getElementById('docClinicName').value,
-            description: document.getElementById('docDescription').value,
-            photo_url: document.getElementById('docPhotoUrl').value,
-            tags: document.getElementById('docTags').value,
-            languages: document.getElementById('docLanguages').value,
+            name_ru: nameRu,
+            name_en: document.getElementById('docNameEn').value.trim(),
+            specialty,
+            position: document.getElementById('docPosition').value.trim(),
+            clinic_slug: clinicSlug,
+            clinic_name: document.getElementById('docClinicName').value.trim(),
+            description: document.getElementById('docDescription').value.trim(),
+            photo_url: document.getElementById('docPhotoUrl').value.trim(),
+            tags: document.getElementById('docTags').value.trim(),
+            languages: document.getElementById('docLanguages').value.trim(),
             online_consultation: document.getElementById('docOnline').value === 'true',
             order_num: parseInt(document.getElementById('docOrder').value) || 0,
             is_active: document.getElementById('docActive').value === 'true'
         };
+
         if (!editId) payload.id = docId;
+
         try {
+            let res;
             if (editId) {
-                await fetch(`${API_BASE}/doctors/${editId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                res = await fetch(`${API_BASE}/doctors/${editId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             } else {
-                const resp = await fetch(`${API_BASE}/doctors`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                if (!resp.ok) { const err = await resp.text(); showToast('Ошибка: ' + err, 'error'); return; }
+                res = await fetch(`${API_BASE}/doctors`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             }
+
+            if (!res.ok) throw new Error(await getErrorText(res));
+
             showToast('Врач сохранён!', 'success');
             closeDoctorModal();
             loadDoctors();
-        } catch (e) { showToast('Ошибка сохранения врача', 'error'); }
+        } catch (e) { showToast('Ошибка сохранения врача: ' + e.message, 'error'); }
     }
 
     async function deleteDoctor(id) {
         if (!confirm('Удалить этого врача?')) return;
         try {
-            await fetch(`${API_BASE}/doctors/${id}`, { method: 'DELETE' });
+            const res = await fetch(`${API_BASE}/doctors/${id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error(await getErrorText(res));
             showToast('Врач удалён', 'success');
             loadDoctors();
-        } catch (e) { showToast('Ошибка удаления', 'error'); }
+        } catch (e) { showToast('Ошибка удаления: ' + e.message, 'error'); }
     }
 
     // --- CLINICS ---
     async function loadClinics() {
         try {
             const res = await fetch(`${API_BASE}/clinics?limit=100`);
+            if (!res.ok) throw new Error(await getErrorText(res));
             const data = await res.json();
             clinicsList = data.data || [];
             renderClinicsTable();
-        } catch (e) { document.getElementById('clinicsBody').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;">Нет данных. Добавьте первую клинику.</td></tr>'; }
+        } catch (e) { document.getElementById('clinicsBody').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;">Нет данных. Добавьте первую клинику.</td></tr>'; showToast('Ошибка загрузки клиник: ' + e.message, 'error'); }
     }
 
     function renderClinicsTable() {
@@ -653,47 +697,61 @@
 
     async function saveClinic() {
         const editId = document.getElementById('clinicEditId').value;
+        const slug = normalizeSlug(document.getElementById('clinicSlug').value);
+        const nameRu = document.getElementById('clinicNameRu').value.trim();
+
+        if (!nameRu) { showToast('Укажите название клиники', 'error'); return; }
+        if (!slug) { showToast('Укажите URL slug клиники', 'error'); return; }
+        if (!isValidSlug(slug)) { showToast('Slug клиники должен содержать только латиницу, цифры и дефисы', 'error'); return; }
+
+        const duplicateSlug = clinicsList.some(c => normalizeSlug(c.slug) === slug && c.id !== editId);
+        if (duplicateSlug) { showToast('Клиника с таким slug уже существует', 'error'); return; }
+
         const payload = {
-            name_ru: document.getElementById('clinicNameRu').value,
-            name_en: document.getElementById('clinicNameEn').value,
-            slug: document.getElementById('clinicSlug').value,
-            city: document.getElementById('clinicCity').value,
+            name_ru: nameRu,
+            name_en: document.getElementById('clinicNameEn').value.trim(),
+            slug,
+            city: document.getElementById('clinicCity').value.trim(),
             type: document.getElementById('clinicType').value,
-            icon: document.getElementById('clinicIcon').value,
-            short_description: document.getElementById('clinicShortDesc').value,
-            description: document.getElementById('clinicDescription').value,
-            specialties: document.getElementById('clinicSpecialties').value,
-            beds: document.getElementById('clinicBeds').value,
-            departments: document.getElementById('clinicDepartments').value,
-            image_url: document.getElementById('clinicImageUrl').value,
+            icon: document.getElementById('clinicIcon').value.trim(),
+            short_description: document.getElementById('clinicShortDesc').value.trim(),
+            description: document.getElementById('clinicDescription').value.trim(),
+            specialties: document.getElementById('clinicSpecialties').value.trim(),
+            beds: document.getElementById('clinicBeds').value.trim(),
+            departments: document.getElementById('clinicDepartments').value.trim(),
+            image_url: document.getElementById('clinicImageUrl').value.trim(),
             order_num: parseInt(document.getElementById('clinicOrder').value) || 0,
             is_active: true
         };
         try {
+            let res;
             if (editId) {
-                await fetch(`${API_BASE}/clinics/${editId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                res = await fetch(`${API_BASE}/clinics/${editId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             } else {
-                await fetch(`${API_BASE}/clinics`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                res = await fetch(`${API_BASE}/clinics`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             }
+            if (!res.ok) throw new Error(await getErrorText(res));
             showToast('Клиника сохранена!', 'success');
             closeClinicModal();
             loadClinics();
-        } catch (e) { showToast('Ошибка сохранения клиники', 'error'); }
+        } catch (e) { showToast('Ошибка сохранения клиники: ' + e.message, 'error'); }
     }
 
     async function deleteClinic(id) {
         if (!confirm('Удалить эту клинику?')) return;
         try {
-            await fetch(`${API_BASE}/clinics/${id}`, { method: 'DELETE' });
+            const res = await fetch(`${API_BASE}/clinics/${id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error(await getErrorText(res));
             showToast('Клиника удалена', 'success');
             loadClinics();
-        } catch (e) { showToast('Ошибка удаления', 'error'); }
+        } catch (e) { showToast('Ошибка удаления: ' + e.message, 'error'); }
     }
 
     // --- SETTINGS ---
     async function loadSettings() {
         try {
             const res = await fetch(`${API_BASE}/site_settings?limit=100`);
+            if (!res.ok) throw new Error(await getErrorText(res));
             const data = await res.json();
             settings = {};
             (data.data || []).forEach(s => { settings[s.key] = s; });
@@ -701,7 +759,7 @@
             document.getElementById('settingChatId').value = settings['telegram_chat_id']?.value || '';
             document.getElementById('settingPhone').value = settings['company_phone']?.value || '';
             document.getElementById('settingEmail').value = settings['company_email']?.value || '';
-        } catch (e) { showToast('Ошибка загрузки настроек', 'error'); }
+        } catch (e) { showToast('Ошибка загрузки настроек: ' + e.message, 'error'); }
     }
 
     async function saveSettings() {
@@ -716,27 +774,30 @@
         try {
             for (const upd of updates) {
                 const record = settings[upd.key];
+                let res;
                 if (record) {
-                    await fetch(`${API_BASE}/site_settings/${record.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: upd.value }) });
+                    res = await fetch(`${API_BASE}/site_settings/${record.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: upd.value }) });
                 } else {
                     // Create new setting if it doesn't exist
-                    await fetch(`${API_BASE}/site_settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: upd.key, value: upd.value, description: upd.key }) });
+                    res = await fetch(`${API_BASE}/site_settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: upd.key, value: upd.value, description: upd.key }) });
                 }
+                if (!res.ok) throw new Error(await getErrorText(res));
             }
             showToast('Настройки сохранены!', 'success');
             document.getElementById('settingPassword').value = '';
             if (newPwd) currentPassword = newPwd;
             loadSettings(); // Reload to update local cache
-        } catch (e) { showToast('Ошибка сохранения настроек', 'error'); }
+        } catch (e) { showToast('Ошибка сохранения настроек: ' + e.message, 'error'); }
     }
 
     // --- SUBMISSIONS ---
     async function loadSubmissions() {
         try {
             const res = await fetch(`${API_BASE}/form_submissions?limit=100&sort=-created_at`);
+            if (!res.ok) throw new Error(await getErrorText(res));
             const data = await res.json();
             renderSubmissions(data.data || []);
-        } catch (e) { document.getElementById('submissionsBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:40px;">Ошибка загрузки</td></tr>'; }
+        } catch (e) { document.getElementById('submissionsBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:40px;">Ошибка загрузки</td></tr>'; showToast('Ошибка загрузки заявок: ' + e.message, 'error'); }
     }
 
     function renderSubmissions(submissions) {
