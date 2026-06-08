@@ -34,6 +34,8 @@
         var specialties = specialtiesRaw ? specialtiesRaw.split(',').map(function(s) { return s.trim().toLowerCase(); }) : [];
         var treatmentRaw = (script.getAttribute('data-treatment') || '').trim();
         var treatmentKeywords = treatmentRaw ? treatmentRaw.split(',').map(function(s) { return s.trim().toLowerCase(); }) : [];
+        // ПРИОРИТЕТ: точная связь с направлением через БД (treatment_slugs)
+        var treatmentSlug = (script.getAttribute('data-treatment-slug') || '').trim().toLowerCase();
 
         try {
             var resp = await fetch(base + 'tables/doctors?limit=100');
@@ -49,8 +51,16 @@
                 });
             }
 
-            // Filter by specialty keywords
-            if (specialties.length > 0) {
+            // ПРИОРИТЕТ: фильтр по slug направления (надёжная связь через БД)
+            if (treatmentSlug) {
+                doctors = doctors.filter(function(d) {
+                    var slugs = (d.treatment_slugs || '').split(',').map(function(s) { return s.trim().toLowerCase(); });
+                    return slugs.indexOf(treatmentSlug) !== -1;
+                });
+            }
+
+            // Filter by specialty keywords (fallback, только если slug не задан)
+            if (!treatmentSlug && specialties.length > 0) {
                 doctors = doctors.filter(function(d) {
                     var docSpecs = (d.specialty || '').toLowerCase();
                     var docTags = (d.tags || '').toLowerCase();
@@ -60,8 +70,8 @@
                 });
             }
 
-            // Filter by treatment profile keywords/slugs
-            if (treatmentKeywords.length > 0) {
+            // Filter by treatment profile keywords/slugs (fallback, только если slug не задан)
+            if (!treatmentSlug && treatmentKeywords.length > 0) {
                 doctors = doctors.filter(function(d) {
                     var blob = ((d.treatment_slugs || '') + ',' + (d.treatment_names || '') + ',' + (d.tags || '')).toLowerCase();
                     return treatmentKeywords.some(function(t) {

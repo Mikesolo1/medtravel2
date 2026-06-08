@@ -1060,7 +1060,10 @@
         'napravleniya-gematologiya': 'Гематология', 'napravleniya-genetika': 'Генетика',
         'napravleniya-ginekologiya': 'Гинекология', 'napravleniya-geriatriya': 'Гериатрия',
         'napravleniya-kardiologiya': 'Кардиология', 'napravleniya-nevrologiya': 'Неврология',
-        'napravleniya-ortopediya': 'Ортопедия', 'napravleniya-urologiya': 'Урология'
+        'napravleniya-ortopediya': 'Ортопедия', 'napravleniya-urologiya': 'Урология',
+        'napravleniya-dermatologiya': 'Дерматология', 'napravleniya-lor': 'Отоларингология (ЛОР)',
+        'napravleniya-proktologiya': 'Проктология', 'napravleniya-stomatologiya': 'Стоматология',
+        'napravleniya-terapiya': 'Терапия', 'napravleniya-endokrinologiya': 'Эндокринология'
     };
 
     async function loadPages() {
@@ -2086,7 +2089,10 @@
             'napravleniya-gematologiya', 'napravleniya-genetika',
             'napravleniya-ginekologiya', 'napravleniya-geriatriya',
             'napravleniya-kardiologiya', 'napravleniya-nevrologiya',
-            'napravleniya-ortopediya', 'napravleniya-urologiya'
+            'napravleniya-ortopediya', 'napravleniya-urologiya',
+            'napravleniya-dermatologiya', 'napravleniya-lor',
+            'napravleniya-proktologiya', 'napravleniya-stomatologiya',
+            'napravleniya-terapiya', 'napravleniya-endokrinologiya'
         ];
         const existingSlugs = pages.map(p => p.page_slug);
         for (const slug of napravleniyaSlugs) {
