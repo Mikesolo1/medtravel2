@@ -6,3 +6,8 @@
 node_modules/
 *.log
 .env
+
+# SQLite БД (не коммитить — данные в проде)
+extracted/server/data.db
+extracted/server/data.db-wal
+extracted/server/data.db-shm
