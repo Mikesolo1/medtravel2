@@ -164,9 +164,11 @@ console.log(`[seed] treatments: ${tc}`);
 
 // ---------- site_settings ----------
 function scryptHash(password) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
-  return `scrypt$${salt}$${hash}`;
+  // ВАЖНО: соль — Buffer (байты), как в publish-server.js verifyPasswordHash.
+  // Иначе scrypt солит hex-СТРОКОЙ при засеве и БАЙТАМИ при проверке → пароль не сойдётся.
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(String(password || ''), salt, 64);
+  return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`;
 }
 const SETTINGS = [
   ['site_base_url', 'https://kliniki-izrailya.solomatin-marketing.ru'],
