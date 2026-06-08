@@ -4,28 +4,43 @@
  * Requires: #doctorsGrid container on the page, ../css/doctors-grid.css for styles.
  */
 document.addEventListener('DOMContentLoaded', async function() {
-    const script = document.querySelector('script[data-specialty]');
+    const script = document.querySelector('script[data-specialty], script[data-treatment-slug]');
     if (!script) return;
     
     const specialties = (script.dataset.specialty || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
     const treatmentKeywords = (script.dataset.treatment || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    // ПРИОРИТЕТ: slug направления (надёжная связь через БД: treatment_slugs / pivot)
+    const treatmentSlug = (script.dataset.treatmentSlug || '').trim().toLowerCase();
     const grid = document.getElementById('doctorsGrid');
     if (!grid) return;
 
     try {
         const resp = await fetch('../tables/doctors?limit=100');
         const data = await resp.json();
-        const doctors = (data.data || []).filter(d => {
-            if (!d.is_active) return false;
-            const docSpecs = (d.specialty || '').toLowerCase();
-            const docTags = (d.tags || '').toLowerCase();
-            const docTreatments = `${d.treatment_slugs || ''},${d.treatment_names || ''},${docTags}`.toLowerCase();
+        const allActive = (data.data || []).filter(d => d.is_active);
 
-            const specialtyMatched = specialties.length === 0 || specialties.some(s => docSpecs.includes(s) || docTags.includes(s));
-            const treatmentMatched = treatmentKeywords.length === 0 || treatmentKeywords.some(t => docTreatments.includes(t));
+        // 1) Основной путь — фильтр по связи с направлением (slug)
+        let doctors = [];
+        if (treatmentSlug) {
+            doctors = allActive.filter(d => {
+                const slugs = (d.treatment_slugs || '').split(',').map(s => s.trim().toLowerCase());
+                return slugs.indexOf(treatmentSlug) !== -1;
+            });
+        }
 
-            return specialtyMatched && treatmentMatched;
-        });
+        // 2) Fallback — старый keyword-фильтр (если slug не задан ИЛИ ничего не нашлось)
+        if (doctors.length === 0 && (specialties.length || treatmentKeywords.length)) {
+            doctors = allActive.filter(d => {
+                const docSpecs = (d.specialty || '').toLowerCase();
+                const docTags = (d.tags || '').toLowerCase();
+                const docTreatments = `${d.treatment_slugs || ''},${d.treatment_names || ''},${docTags}`.toLowerCase();
+
+                const specialtyMatched = specialties.length === 0 || specialties.some(s => docSpecs.includes(s) || docTags.includes(s));
+                const treatmentMatched = treatmentKeywords.length === 0 || treatmentKeywords.some(t => docTreatments.includes(t));
+
+                return specialtyMatched && treatmentMatched;
+            });
+        }
 
         doctors.sort((a, b) => (a.order_num || 99) - (b.order_num || 99));
 

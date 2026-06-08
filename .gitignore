@@ -1,0 +1,8 @@
+# Архивы (старые версии — не коммитить, CI extract-zip удалён)
+*.zip
+
+# Системные
+.DS_Store
+node_modules/
+*.log
+.env
