@@ -1340,7 +1340,7 @@
                 const slug = normalizeSlug(t.slug || t.id);
                 const title = t.name_ru || slug;
                 const checked = selected.has(slug) ? 'checked' : '';
-                return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:0.875rem;cursor:pointer;"><input type="checkbox" value="${slug}" ${checked}> ${title} <span style="color:var(--text-light);font-size:0.75rem;">(${slug})</span></label>`;
+                return `<label title="${title} (${slug})" style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:0.875rem;cursor:pointer;min-width:0;"><input type="checkbox" value="${slug}" ${checked} style="flex:0 0 auto;"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">${title} <span style="color:var(--text-light);font-size:0.75rem;">(${slug})</span></span></label>`;
             }).join('');
     }
 
