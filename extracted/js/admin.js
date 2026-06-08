@@ -10,6 +10,9 @@
     let clinicsList = [];
     let treatmentsList = [];
     let doctorProfileStatusCache = {};
+    let doctorTreatmentsByDoctorId = {};
+    let doctorPivotEnabled = false;
+    let seoPublishLogByDoctorId = {};
 
     function normalizeSlug(value) {
         return (value || '').trim().toLowerCase();
@@ -332,6 +335,160 @@
         });
     }
 
+    async function tryServerBatchStaticStatuses(doctorIds = []) {
+        return callPublishJson('/admin/seo/static-statuses', {
+            method: 'POST',
+            body: JSON.stringify({ doctor_ids: doctorIds })
+        });
+    }
+
+    async function updateDoctorSeoStatus(doctorId, seoStatus, seoError = '') {
+        const normalizedId = normalizeSlug(doctorId);
+        if (!normalizedId) return;
+        try {
+            await fetch(`${API_BASE}/doctors/${encodeURIComponent(normalizedId)}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    seo_status: seoStatus,
+                    seo_last_error: seoError,
+                    seo_last_checked_at: new Date().toISOString()
+                })
+            });
+        } catch (e) {
+            // non-blocking metadata update
+        }
+    }
+
+    async function appendSeoPublishLog(doctorId, status, message, source = 'admin') {
+        const normalizedId = normalizeSlug(doctorId);
+        if (!normalizedId) return;
+        try {
+            await fetch(`${API_BASE}/seo_publish_logs`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    doctor_id: normalizedId,
+                    status: String(status || '').trim(),
+                    message: String(message || '').slice(0, 2000),
+                    source,
+                    created_at: new Date().toISOString()
+                })
+            });
+        } catch (e) {
+            // non-blocking logging
+        }
+    }
+
+    async function loadSeoPublishLogs() {
+        try {
+            const res = await fetch(`${API_BASE}/seo_publish_logs?limit=500&sort=-created_at`);
+            if (!res.ok) return;
+            const data = await res.json();
+            const rows = data.data || [];
+            const grouped = {};
+            rows.forEach((row) => {
+                const id = normalizeSlug(row?.doctor_id);
+                if (!id || grouped[id]) return;
+                grouped[id] = row;
+            });
+            seoPublishLogByDoctorId = grouped;
+        } catch (e) {
+            seoPublishLogByDoctorId = {};
+        }
+    }
+
+    function getDoctorTreatmentSlugs(doctor) {
+        const id = normalizeSlug(doctor?.id);
+        const fromPivot = doctorTreatmentsByDoctorId[id];
+        if (Array.isArray(fromPivot) && fromPivot.length > 0) {
+            return fromPivot;
+        }
+        return parseCsv(doctor?.treatment_slugs).map(normalizeSlug).filter(Boolean);
+    }
+
+    async function loadDoctorTreatmentPivot() {
+        doctorTreatmentsByDoctorId = {};
+        doctorPivotEnabled = false;
+        try {
+            const res = await fetch(`${API_BASE}/doctor_treatments?limit=5000`);
+            if (!res.ok) throw new Error(await getErrorText(res));
+            const data = await res.json();
+            const rows = data.data || [];
+            rows.forEach((row) => {
+                const doctorId = normalizeSlug(row?.doctor_id);
+                const treatmentSlug = normalizeSlug(row?.treatment_slug);
+                if (!doctorId || !treatmentSlug) return;
+                if (!doctorTreatmentsByDoctorId[doctorId]) doctorTreatmentsByDoctorId[doctorId] = [];
+                if (!doctorTreatmentsByDoctorId[doctorId].includes(treatmentSlug)) {
+                    doctorTreatmentsByDoctorId[doctorId].push(treatmentSlug);
+                }
+            });
+            doctorPivotEnabled = true;
+        } catch (e) {
+            doctorTreatmentsByDoctorId = {};
+            doctorPivotEnabled = false;
+        }
+    }
+
+    function applyPivotTreatmentsToDoctors() {
+        if (!doctorPivotEnabled) return;
+        doctorsList = doctorsList.map((doctor) => {
+            const slugs = getDoctorTreatmentSlugs(doctor);
+            const treatmentNames = slugs.map(slug => {
+                const found = treatmentsList.find(t => normalizeSlug(t.slug || t.id) === slug);
+                return found?.name_ru || slug;
+            });
+            return {
+                ...doctor,
+                treatment_slugs: slugs.join(','),
+                treatment_names: treatmentNames.join(',')
+            };
+        });
+    }
+
+    async function syncDoctorTreatmentPivot(doctorId, treatmentSlugs = []) {
+        if (!doctorPivotEnabled) return;
+        const normalizedId = normalizeSlug(doctorId);
+        if (!normalizedId) return;
+
+        const uniqueSlugs = Array.from(new Set((treatmentSlugs || []).map(normalizeSlug).filter(Boolean)));
+
+        const existingRes = await fetch(`${API_BASE}/doctor_treatments?limit=5000`);
+        if (!existingRes.ok) throw new Error(await getErrorText(existingRes));
+        const existingData = await existingRes.json();
+        const existingRows = (existingData.data || []).filter(row => normalizeSlug(row?.doctor_id) === normalizedId);
+
+        for (const row of existingRows) {
+            await fetch(`${API_BASE}/doctor_treatments/${encodeURIComponent(row.id)}`, { method: 'DELETE' });
+        }
+
+        for (const slug of uniqueSlugs) {
+            await fetch(`${API_BASE}/doctor_treatments`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ doctor_id: normalizedId, treatment_slug: slug })
+            });
+        }
+
+        doctorTreatmentsByDoctorId[normalizedId] = uniqueSlugs;
+    }
+
+    async function deleteDoctorTreatmentPivot(doctorId) {
+        if (!doctorPivotEnabled) return;
+        const normalizedId = normalizeSlug(doctorId);
+        if (!normalizedId) return;
+
+        const existingRes = await fetch(`${API_BASE}/doctor_treatments?limit=5000`);
+        if (!existingRes.ok) return;
+        const existingData = await existingRes.json();
+        const existingRows = (existingData.data || []).filter(row => normalizeSlug(row?.doctor_id) === normalizedId);
+        for (const row of existingRows) {
+            await fetch(`${API_BASE}/doctor_treatments/${encodeURIComponent(row.id)}`, { method: 'DELETE' });
+        }
+        delete doctorTreatmentsByDoctorId[normalizedId];
+    }
+
     async function tryServerDeleteClinic(clinicId) {
         return callPublishJson(`/admin/clinics/${encodeURIComponent(clinicId)}`, {
             method: 'DELETE'
@@ -393,22 +550,32 @@
             showToast('Врач не найден в списке', 'error');
             return;
         }
+
+        const normalizedId = normalizeSlug(id);
         try {
             try {
                 await tryServerPublishDoctor(doctor, false);
-                doctorProfileStatusCache[id] = true;
+                doctorProfileStatusCache[normalizedId] = true;
+                await updateDoctorSeoStatus(normalizedId, 'published', '');
+                await appendSeoPublishLog(normalizedId, 'published', 'SEO published from admin action');
+                await loadSeoPublishLogs();
                 renderDoctorsTable();
-                showToast(`SEO-страница ${normalizeSlug(id)}.html опубликована на сервере`, 'success');
+                showToast(`SEO-страница ${normalizedId}.html опубликована на сервере`, 'success');
                 return;
             } catch (serverError) {
                 console.warn('Server publish unavailable, fallback to download:', serverError);
             }
 
             const fileName = downloadDoctorStaticPage(doctor);
-            doctorProfileStatusCache[id] = true;
+            doctorProfileStatusCache[normalizedId] = false;
+            await updateDoctorSeoStatus(normalizedId, 'fallback_generated', 'Server publish unavailable, local file generated');
+            await appendSeoPublishLog(normalizedId, 'fallback_generated', `Local fallback generated: ${fileName}`);
+            await loadSeoPublishLogs();
             renderDoctorsTable();
             showToast(`SEO-страница ${fileName} сформирована локально. Загрузите файл в /vrachi/.`, 'success');
         } catch (e) {
+            await updateDoctorSeoStatus(normalizedId, 'failed', e.message || 'publish failed');
+            await appendSeoPublishLog(normalizedId, 'failed', e.message || 'publish failed');
             showToast('Ошибка SEO-публикации: ' + e.message, 'error');
         }
     }
@@ -418,7 +585,7 @@
             if (!doctorsList.length) await loadDoctors();
             await refreshDoctorProfileStatuses(false);
 
-            const fallbackDoctors = doctorsList.filter(d => d.id && !doctorProfileStatusCache[d.id]);
+            const fallbackDoctors = doctorsList.filter(d => d.id && !doctorProfileStatusCache[normalizeSlug(d.id)]);
             if (!fallbackDoctors.length) {
                 showToast('Все врачи уже имеют статические SEO-страницы', 'success');
                 return;
@@ -426,12 +593,18 @@
 
             const generated = [];
             const failed = [];
+            const serverPublishedIds = [];
+            const localFallbackIds = [];
 
             try {
                 const bulkResult = await tryServerBulkPublish(fallbackDoctors);
                 (bulkResult.published || []).forEach(item => {
                     generated.push(item.file_name || `${item.id}.html`);
-                    if (item.id) doctorProfileStatusCache[item.id] = true;
+                    if (item.id) {
+                        const publishedId = normalizeSlug(item.id);
+                        doctorProfileStatusCache[publishedId] = true;
+                        serverPublishedIds.push(publishedId);
+                    }
                 });
                 (bulkResult.failed || []).forEach(item => {
                     failed.push(`${item.id}: ${item.error}`);
@@ -442,7 +615,9 @@
                     try {
                         const fileName = downloadDoctorStaticPage(doctor);
                         generated.push(fileName);
-                        doctorProfileStatusCache[doctor.id] = true;
+                        const fallbackId = normalizeSlug(doctor.id);
+                        doctorProfileStatusCache[fallbackId] = false;
+                        localFallbackIds.push(fallbackId);
                     } catch (e) {
                         failed.push(`${doctor.id}: ${e.message}`);
                     }
@@ -464,6 +639,24 @@
             ];
             downloadTextFile('seo_publish_report.txt', reportLines.join('\n'));
 
+            for (const doctorId of serverPublishedIds) {
+                if (!doctorId) continue;
+                await updateDoctorSeoStatus(doctorId, 'published', '');
+                await appendSeoPublishLog(doctorId, 'published', 'Bulk SEO publish completed on server');
+            }
+            for (const doctorId of localFallbackIds) {
+                if (!doctorId) continue;
+                await updateDoctorSeoStatus(doctorId, 'fallback_generated', 'Server bulk publish unavailable, local file generated');
+                await appendSeoPublishLog(doctorId, 'fallback_generated', 'Bulk fallback file generated locally');
+            }
+            for (const fail of failed) {
+                const doctorId = normalizeSlug((fail || '').split(':')[0] || '');
+                if (!doctorId) continue;
+                await updateDoctorSeoStatus(doctorId, 'failed', fail);
+                await appendSeoPublishLog(doctorId, 'failed', fail);
+            }
+            await loadSeoPublishLogs();
+
             if (failed.length > 0) {
                 showToast(`Bulk SEO: сформировано ${generated.length}, ошибок ${failed.length}`, 'error');
             } else {
@@ -479,7 +672,7 @@
             if (!doctorsList.length) await loadDoctors();
             await refreshDoctorProfileStatuses(false);
 
-            const fallbackDoctors = doctorsList.filter(d => d.id && !doctorProfileStatusCache[d.id]);
+            const fallbackDoctors = doctorsList.filter(d => d.id && !doctorProfileStatusCache[normalizeSlug(d.id)]);
             if (!fallbackDoctors.length) {
                 showToast('Fallback-врачей не найдено: пакет не требуется', 'success');
                 return;
@@ -568,9 +761,9 @@
                 .map(d => {
                     const doctorId = normalizeSlug(d.id);
                     const clinicSlug = normalizeSlug(d.clinic_slug);
-                    const treatmentSlugs = parseCsv(d.treatment_slugs).map(normalizeSlug).filter(Boolean);
+                    const treatmentSlugs = getDoctorTreatmentSlugs(d);
                     const treatmentNames = treatmentSlugs.map(slug => treatmentMap.get(slug) || slug);
-                    const seoStatus = doctorProfileStatusCache[d.id] ? 'static' : 'fallback';
+                    const seoStatus = doctorProfileStatusCache[doctorId] ? 'static' : 'fallback';
                     return [
                         doctorId,
                         d.name_ru || '',
@@ -620,7 +813,7 @@
         if (!doctorsList.length) await loadDoctors();
         await refreshDoctorProfileStatuses(false);
 
-        const fallbackDoctors = doctorsList.filter(d => d.id && !doctorProfileStatusCache[d.id]);
+        const fallbackDoctors = doctorsList.filter(d => d.id && !doctorProfileStatusCache[normalizeSlug(d.id)]);
         const canGenerate = [];
         const blocked = [];
 
@@ -836,18 +1029,30 @@
     async function refreshDoctorProfileStatuses(showResultToast = false) {
         if (!doctorsList.length) return;
 
-        const checks = doctorsList.map(async (d) => {
-            const id = d.id;
-            if (!id) return;
-            doctorProfileStatusCache[id] = await staticDoctorPageExists(id);
-        });
+        const doctorIds = doctorsList.map(d => normalizeSlug(d.id)).filter(Boolean);
+        doctorProfileStatusCache = {};
 
-        await Promise.all(checks);
+        try {
+            const payload = await tryServerBatchStaticStatuses(doctorIds);
+            const statuses = payload?.statuses || {};
+            doctorIds.forEach((id) => {
+                doctorProfileStatusCache[id] = !!statuses[id];
+            });
+        } catch (batchError) {
+            console.warn('Batch static status endpoint unavailable, fallback to per-file checks', batchError);
+            const checks = doctorsList.map(async (d) => {
+                const id = normalizeSlug(d.id);
+                if (!id) return;
+                doctorProfileStatusCache[id] = await staticDoctorPageExists(id);
+            });
+            await Promise.all(checks);
+        }
+
         renderDoctorsTable();
 
         if (showResultToast) {
-            const staticCount = doctorsList.filter(d => doctorProfileStatusCache[d.id]).length;
-            const fallbackCount = doctorsList.length - staticCount;
+            const staticCount = doctorIds.filter(id => doctorProfileStatusCache[id]).length;
+            const fallbackCount = doctorIds.length - staticCount;
             showToast(`Проверка SEO-страниц: статических ${staticCount}, fallback ${fallbackCount}`, 'success');
         }
     }
@@ -891,16 +1096,14 @@
 
             const doctorsWithUnknownTreatments = doctorsList
                 .map(d => {
-                    const unknown = parseCsv(d.treatment_slugs)
-                        .map(normalizeSlug)
-                        .filter(Boolean)
+                    const unknown = getDoctorTreatmentSlugs(d)
                         .filter(slug => !treatmentSlugs.has(slug));
                     return unknown.length ? `${d.name_ru || d.id} → ${unknown.join(', ')}` : '';
                 })
                 .filter(Boolean);
 
             const doctorsWithoutStaticSeo = doctorsList
-                .filter(d => d.id && !doctorProfileStatusCache[d.id])
+                .filter(d => d.id && !doctorProfileStatusCache[normalizeSlug(d.id)])
                 .map(d => d.name_ru || d.id);
 
             const totalIssues = doctorInvalidIds.length + doctorDuplicateIds.length + clinicDuplicateSlugs.length + treatmentDuplicateSlugs.length + doctorsWithUnknownClinic.length + doctorsWithUnknownTreatments.length;
@@ -990,10 +1193,15 @@
     // --- DOCTORS ---
     async function loadDoctors() {
         try {
-            const res = await fetch(`${API_BASE}/doctors?limit=100`);
-            if (!res.ok) throw new Error(await getErrorText(res));
-            const data = await res.json();
+            const [doctorsRes] = await Promise.all([
+                fetch(`${API_BASE}/doctors?limit=200`),
+                loadDoctorTreatmentPivot(),
+                loadSeoPublishLogs()
+            ]);
+            if (!doctorsRes.ok) throw new Error(await getErrorText(doctorsRes));
+            const data = await doctorsRes.json();
             doctorsList = data.data || [];
+            applyPivotTreatmentsToDoctors();
             doctorProfileStatusCache = {};
             renderDoctorsTable();
             refreshDoctorProfileStatuses();
@@ -1007,17 +1215,34 @@
             return;
         }
         tbody.innerHTML = doctorsList.map(d => {
-            const treatmentSlugs = parseCsv(d.treatment_slugs).map(normalizeSlug);
+            const treatmentSlugs = getDoctorTreatmentSlugs(d);
             const treatmentNames = treatmentSlugs.map(slug => {
                 const found = treatmentsList.find(t => normalizeSlug(t.slug || t.id) === slug);
                 return found?.name_ru || slug;
             }).slice(0, 2);
             const treatmentCell = treatmentNames.length ? `${treatmentNames.join(', ')}${treatmentSlugs.length > 2 ? ' +' + (treatmentSlugs.length - 2) : ''}` : '—';
 
-            const isStatic = !!doctorProfileStatusCache[d.id];
-            const seoBadge = isStatic
+            const normalizedDoctorId = normalizeSlug(d.id);
+            const isStatic = !!doctorProfileStatusCache[normalizedDoctorId];
+            const staticBadge = isStatic
                 ? '<span class="status-badge status-badge--processed">Статическая</span>'
                 : '<span class="status-badge status-badge--new">Fallback template</span>';
+
+            const seoStateRaw = String(d.seo_status || (isStatic ? 'published' : 'fallback')).trim().toLowerCase();
+            const seoStateClass = (seoStateRaw === 'failed' || seoStateRaw === 'error') ? 'status-badge--new' : 'status-badge--processed';
+            const seoStateLabelMap = {
+                published: 'published',
+                fallback: 'fallback',
+                fallback_generated: 'fallback_generated',
+                failed: 'failed',
+                error: 'failed',
+                draft: 'draft'
+            };
+            const seoStateLabel = seoStateLabelMap[seoStateRaw] || (seoStateRaw || 'draft');
+            const seoStatusBadge = `<span class="status-badge ${seoStateClass}">${escapeHtml(seoStateLabel)}</span>`;
+
+            const latestLog = seoPublishLogByDoctorId[normalizedDoctorId];
+            const latestLogText = latestLog?.message ? `<div style="margin-top:4px;font-size:0.7rem;color:var(--text-light);max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(latestLog.message)}">${escapeHtml(latestLog.message)}</div>` : '';
             const staticUrl = `vrachi/${encodeURIComponent(d.id || '')}.html`;
             const fallbackUrl = `vrachi/template.html?id=${encodeURIComponent(d.id || '')}`;
 
@@ -1027,7 +1252,7 @@
                 <td>${d.specialty || '—'}</td>
                 <td>${d.clinic_name || '—'}</td>
                 <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;">${treatmentCell}</td>
-                <td>${seoBadge}<div style="margin-top:4px;"><a href="${isStatic ? staticUrl : fallbackUrl}" target="_blank" style="font-size:0.72rem;">Открыть</a></div></td>
+                <td>${staticBadge}<div style="margin-top:4px;">${seoStatusBadge}</div>${latestLogText}<div style="margin-top:4px;"><a href="${isStatic ? staticUrl : fallbackUrl}" target="_blank" style="font-size:0.72rem;">Открыть</a></div></td>
                 <td>${d.online_consultation ? '<i class="fas fa-check" style="color:var(--success)"></i>' : '<i class="fas fa-times" style="color:var(--text-light)"></i>'}</td>
                 <td class="actions">
                     <button class="btn btn--secondary btn--sm" onclick="publishDoctorStaticPageById('${d.id}')" title="Сформировать SEO HTML"><i class="fas fa-file-arrow-down"></i></button>
@@ -1056,7 +1281,7 @@
         document.getElementById('docLanguages').value = doctor?.languages || '';
         document.getElementById('docOnline').value = doctor?.online_consultation ? 'true' : 'false';
         document.getElementById('docOrder').value = doctor?.order_num || 0;
-        renderDoctorTreatmentsSelector(doctor?.treatment_slugs || '');
+        renderDoctorTreatmentsSelector(getDoctorTreatmentSlugs(doctor).join(','));
         if (!clinicsList.length) loadClinics();
         document.getElementById('doctorModal').classList.add('show');
     }
@@ -1161,29 +1386,52 @@
                 // Ignore non-JSON response body
             }
 
+            const normalizedSavedId = normalizeSlug(savedDoctor.id);
+            try {
+                await syncDoctorTreatmentPivot(normalizedSavedId, selectedTreatmentSlugs);
+            } catch (pivotError) {
+                console.warn('doctor_treatments sync failed, continue with legacy csv fields:', pivotError);
+            }
+
             let publishMessage = '';
             try {
                 await tryServerPublishDoctor(savedDoctor, false);
-                doctorProfileStatusCache[savedDoctor.id] = true;
-                publishMessage = `SEO-страница ${normalizeSlug(savedDoctor.id)}.html опубликована сервером.`;
+                doctorProfileStatusCache[normalizedSavedId] = true;
+                await updateDoctorSeoStatus(normalizedSavedId, 'published', '');
+                await appendSeoPublishLog(normalizedSavedId, 'published', 'Published after doctor save');
+                publishMessage = `SEO-страница ${normalizedSavedId}.html опубликована сервером.`;
             } catch (serverError) {
                 console.warn('Server publish unavailable after save, fallback to local download:', serverError);
                 const fileName = downloadDoctorStaticPage(savedDoctor);
-                doctorProfileStatusCache[savedDoctor.id] = true;
+                doctorProfileStatusCache[normalizedSavedId] = false;
+                await updateDoctorSeoStatus(normalizedSavedId, 'fallback_generated', 'Server publish unavailable, local file generated');
+                await appendSeoPublishLog(normalizedSavedId, 'fallback_generated', `Local fallback generated: ${fileName}`);
                 publishMessage = `Server publish недоступен. Файл ${fileName} сформирован локально — загрузите его в /vrachi/.`;
             }
 
+            await loadSeoPublishLogs();
             showToast(`Врач сохранён. ${publishMessage}`, 'success');
             closeDoctorModal();
             loadDoctors();
-        } catch (e) { showToast('Ошибка сохранения врача: ' + e.message, 'error'); }
+        } catch (e) {
+            const targetId = normalizeSlug(editId || docId);
+            if (targetId) {
+                await updateDoctorSeoStatus(targetId, 'failed', e.message || 'save failed');
+                await appendSeoPublishLog(targetId, 'failed', e.message || 'save failed');
+            }
+            showToast('Ошибка сохранения врача: ' + e.message, 'error');
+        }
     }
 
     async function deleteDoctor(id) {
         if (!confirm('Удалить этого врача?')) return;
         try {
+            await deleteDoctorTreatmentPivot(id);
             const res = await fetch(`${API_BASE}/doctors/${id}`, { method: 'DELETE' });
             if (!res.ok) throw new Error(await getErrorText(res));
+            const normalizedId = normalizeSlug(id);
+            delete doctorProfileStatusCache[normalizedId];
+            delete seoPublishLogByDoctorId[normalizedId];
             showToast('Врач удалён', 'success');
             loadDoctors();
         } catch (e) { showToast('Ошибка удаления: ' + e.message, 'error'); }
@@ -1326,7 +1574,10 @@
             const data = await res.json();
             treatmentsList = data.data || [];
             renderTreatmentsTable();
-            renderDoctorTreatmentsSelector(document.getElementById('doctorEditId')?.value ? (doctorsList.find(d => d.id === document.getElementById('doctorEditId').value)?.treatment_slugs || '') : '');
+            applyPivotTreatmentsToDoctors();
+            const currentDoctorId = document.getElementById('doctorEditId')?.value || '';
+            const currentDoctor = currentDoctorId ? doctorsList.find(d => d.id === currentDoctorId) : null;
+            renderDoctorTreatmentsSelector(currentDoctor ? getDoctorTreatmentSlugs(currentDoctor).join(',') : '');
             renderDoctorsTable();
         } catch (e) {
             treatmentsList = [];
@@ -1442,7 +1693,7 @@
 
             const treatment = treatmentsList.find(t => t.id === id);
             const treatmentSlug = normalizeSlug(treatment?.slug || treatment?.id || id);
-            const linkedDoctors = doctorsList.filter(d => parseCsv(d.treatment_slugs).map(normalizeSlug).includes(treatmentSlug));
+            const linkedDoctors = doctorsList.filter(d => getDoctorTreatmentSlugs(d).includes(treatmentSlug));
             if (linkedDoctors.length > 0) {
                 showToast(`Удаление запрещено: профиль лечения связан с ${linkedDoctors.length} врач(ами)`, 'error');
                 return;
