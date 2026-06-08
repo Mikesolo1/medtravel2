@@ -84,7 +84,13 @@
             'kardiologiya.html': 'napravleniya-kardiologiya',
             'nevrologiya.html': 'napravleniya-nevrologiya',
             'ortopediya.html': 'napravleniya-ortopediya',
-            'urologiya.html': 'napravleniya-urologiya'
+            'urologiya.html': 'napravleniya-urologiya',
+            'dermatologiya.html': 'napravleniya-dermatologiya',
+            'lor.html': 'napravleniya-lor',
+            'proktologiya.html': 'napravleniya-proktologiya',
+            'stomatologiya.html': 'napravleniya-stomatologiya',
+            'terapiya.html': 'napravleniya-terapiya',
+            'endokrinologiya.html': 'napravleniya-endokrinologiya'
         };
 
         return slugMap[filename] || 'index';

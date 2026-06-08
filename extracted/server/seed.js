@@ -79,7 +79,13 @@ const PAGE_FILES = {
   'napravleniya-kardiologiya': 'napravleniya/kardiologiya.html',
   'napravleniya-nevrologiya': 'napravleniya/nevrologiya.html',
   'napravleniya-ortopediya': 'napravleniya/ortopediya.html',
-  'napravleniya-urologiya': 'napravleniya/urologiya.html'
+  'napravleniya-urologiya': 'napravleniya/urologiya.html',
+  'napravleniya-dermatologiya': 'napravleniya/dermatologiya.html',
+  'napravleniya-lor': 'napravleniya/lor.html',
+  'napravleniya-proktologiya': 'napravleniya/proktologiya.html',
+  'napravleniya-stomatologiya': 'napravleniya/stomatologiya.html',
+  'napravleniya-terapiya': 'napravleniya/terapiya.html',
+  'napravleniya-endokrinologiya': 'napravleniya/endokrinologiya.html'
 };
 
 function extract(re, html) { const m = html.match(re); return m ? m[1].trim() : ''; }
@@ -137,7 +143,14 @@ const TREATMENTS = [
   ['kardiologiya', 'Кардиология', 'fa-heart-pulse'],
   ['nevrologiya', 'Неврология', 'fa-brain'],
   ['ortopediya', 'Ортопедия', 'fa-bone'],
-  ['urologiya', 'Урология', 'fa-kidneys']
+  ['urologiya', 'Урология', 'fa-kidneys'],
+  ['dermatologiya', 'Дерматология', 'fa-hand-dots'],
+  ['lor', 'Отоларингология (ЛОР)', 'fa-ear-listen'],
+  ['proktologiya', 'Проктология', 'fa-stethoscope'],
+  ['stomatologiya', 'Стоматология', 'fa-tooth'],
+  ['terapiya', 'Терапия', 'fa-user-doctor'],
+  ['endokrinologiya', 'Эндокринология', 'fa-vials'],
+  ['onkologiya', 'Онкология', 'fa-ribbon']
 ];
 let tc = 0;
 TREATMENTS.forEach((t, i) => {
