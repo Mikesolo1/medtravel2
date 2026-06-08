@@ -22,6 +22,7 @@ const path = require('path');
 const PORT = Number(process.env.PORT || 8787);
 const TABLES_API_BASE = (process.env.TABLES_API_BASE || 'http://localhost:8788/tables').replace(/\/$/, '');
 const ADMIN_PUBLISH_TOKEN = process.env.ADMIN_PUBLISH_TOKEN || '';
+const DEFAULT_SITE_BASE_URL = (process.env.SITE_BASE_URL || 'https://taurus-medical.com').replace(/\/$/, '');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const DOCTORS_DIR = path.join(PROJECT_ROOT, 'vrachi');
@@ -252,7 +253,7 @@ function sendJson(res, code, payload) {
     'Content-Length': Buffer.byteLength(body),
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS'
   });
   res.end(body);
 }
@@ -272,11 +273,100 @@ async function fetchDoctorById(id) {
   return response.json();
 }
 
-function upsertDoctorIntoSitemap(slug) {
+async function fetchTableRows(table, limit = 1000) {
+  const url = `${TABLES_API_BASE}/${encodeURIComponent(table)}?limit=${limit}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`${table} fetch failed: HTTP ${response.status}`);
+  }
+  const payload = await response.json();
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload)) return payload;
+  return [];
+}
+
+async function fetchTableRecord(table, id) {
+  const url = `${TABLES_API_BASE}/${encodeURIComponent(table)}/${encodeURIComponent(id)}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`${table}/${id} fetch failed: HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+async function deleteTableRecord(table, id) {
+  const url = `${TABLES_API_BASE}/${encodeURIComponent(table)}/${encodeURIComponent(id)}`;
+  const response = await fetch(url, { method: 'DELETE' });
+  if (!response.ok) {
+    throw new Error(`${table}/${id} delete failed: HTTP ${response.status}`);
+  }
+}
+
+async function fetchSiteBaseUrl() {
+  try {
+    const settings = await fetchTableRows('site_settings', 500);
+    const record = settings.find(item => String(item?.key || '').trim() === 'site_base_url');
+    const raw = String(record?.value || '').trim().replace(/\/$/, '');
+    if (/^https?:\/\//i.test(raw)) return raw;
+  } catch (e) {
+    // ignore and use fallback
+  }
+  return DEFAULT_SITE_BASE_URL;
+}
+
+function normalizeSlugList(value) {
+  if (Array.isArray(value)) {
+    return value.map(normalizeSlug).filter(Boolean);
+  }
+  return parseCsv(value).map(normalizeSlug).filter(Boolean);
+}
+
+async function ensureDoctorRelationsExist({ clinic_slug = '', treatment_slugs = [] }) {
+  const clinicSlug = normalizeSlug(clinic_slug);
+  const treatmentSlugs = normalizeSlugList(treatment_slugs);
+
+  if (!clinicSlug && treatmentSlugs.length === 0) {
+    return { ok: true, clinic_slug: '', treatment_slugs: [] };
+  }
+
+  const [clinics, treatments] = await Promise.all([
+    fetchTableRows('clinics', 1000),
+    fetchTableRows('treatments', 1000)
+  ]);
+
+  if (clinicSlug) {
+    const clinicExists = clinics.some(c => normalizeSlug(c?.slug) === clinicSlug);
+    if (!clinicExists) {
+      throw new Error(`clinic_slug not found: ${clinicSlug}`);
+    }
+  }
+
+  const treatmentSet = new Set(treatments.map(t => normalizeSlug(t?.slug || t?.id)).filter(Boolean));
+  const unknownTreatments = treatmentSlugs.filter(slug => !treatmentSet.has(slug));
+  if (unknownTreatments.length) {
+    throw new Error(`treatment_slugs not found: ${unknownTreatments.join(', ')}`);
+  }
+
+  return {
+    ok: true,
+    clinic_slug: clinicSlug,
+    treatment_slugs: treatmentSlugs
+  };
+}
+
+function getLinkedDoctorsByClinic(doctors, clinicSlug) {
+  return doctors.filter(d => normalizeSlug(d?.clinic_slug) === clinicSlug);
+}
+
+function getLinkedDoctorsByTreatment(doctors, treatmentSlug) {
+  return doctors.filter(d => normalizeSlugList(d?.treatment_slugs).includes(treatmentSlug));
+}
+
+async function upsertDoctorIntoSitemap(slug, siteBaseUrl) {
   if (!fs.existsSync(SITEMAP_PATH)) return { updated: false, reason: 'sitemap.xml not found' };
 
   const sitemap = fs.readFileSync(SITEMAP_PATH, 'utf8');
-  const loc = `https://taurus-medical.com/vrachi/${slug}.html`;
+  const loc = `${siteBaseUrl}/vrachi/${slug}.html`;
 
   if (sitemap.includes(loc)) {
     return { updated: false, reason: 'already exists' };
@@ -318,7 +408,8 @@ async function handlePublishOne(req, res, doctorId, dryRun) {
     if (!doctor || !doctor.id) throw new Error('Doctor payload is empty');
 
     const result = publishDoctorFile(doctor, dryRun);
-    const sitemap = dryRun ? { updated: false, reason: 'dry_run' } : upsertDoctorIntoSitemap(result.slug);
+    const siteBaseUrl = await fetchSiteBaseUrl();
+    const sitemap = dryRun ? { updated: false, reason: 'dry_run' } : await upsertDoctorIntoSitemap(result.slug, siteBaseUrl);
 
     sendJson(res, 200, {
       ok: true,
@@ -342,12 +433,13 @@ async function handlePublishBulk(req, res) {
 
     const published = [];
     const failed = [];
+    const siteBaseUrl = await fetchSiteBaseUrl();
 
     for (const doctor of doctors) {
       try {
         const out = publishDoctorFile(doctor, false);
         published.push({ id: out.slug, file_name: out.file_name });
-        upsertDoctorIntoSitemap(out.slug);
+        await upsertDoctorIntoSitemap(out.slug, siteBaseUrl);
       } catch (e) {
         failed.push({ id: doctor?.id || '', error: e.message || 'Unknown error' });
       }
@@ -371,10 +463,91 @@ async function handleSitemapPublish(req, res) {
     const slugs = Array.isArray(body?.doctor_slugs) ? body.doctor_slugs.map(normalizeSlug).filter(Boolean) : [];
     if (!slugs.length) throw new Error('doctor_slugs[] is required');
 
-    const updates = slugs.map(slug => ({ slug, ...upsertDoctorIntoSitemap(slug) }));
+    const siteBaseUrl = await fetchSiteBaseUrl();
+    const updates = [];
+    for (const slug of slugs) {
+      updates.push({ slug, ...(await upsertDoctorIntoSitemap(slug, siteBaseUrl)) });
+    }
     sendJson(res, 200, { ok: true, updates });
   } catch (e) {
     sendJson(res, 400, { ok: false, error: e.message || 'Sitemap publish failed' });
+  }
+}
+
+async function handleValidateDoctorRelations(req, res) {
+  try {
+    const body = await readJsonBody(req);
+    const validation = await ensureDoctorRelationsExist({
+      clinic_slug: body?.clinic_slug,
+      treatment_slugs: body?.treatment_slugs
+    });
+    sendJson(res, 200, {
+      ok: true,
+      clinic_slug: validation.clinic_slug,
+      treatment_slugs: validation.treatment_slugs
+    });
+  } catch (e) {
+    sendJson(res, 400, { ok: false, error: e.message || 'Relation validation failed' });
+  }
+}
+
+async function handleClinicDelete(req, res, clinicId) {
+  try {
+    const [clinic, doctors] = await Promise.all([
+      fetchTableRecord('clinics', clinicId),
+      fetchTableRows('doctors', 2000)
+    ]);
+
+    const clinicSlug = normalizeSlug(clinic?.slug || clinic?.id || clinicId);
+    if (!clinicSlug) throw new Error('Clinic slug is empty');
+
+    const linkedDoctors = getLinkedDoctorsByClinic(doctors, clinicSlug);
+    if (linkedDoctors.length > 0) {
+      sendJson(res, 409, {
+        ok: false,
+        error: `Delete forbidden: clinic is linked to ${linkedDoctors.length} doctor(s)`,
+        code: 'CLINIC_LINKED_DOCTORS',
+        clinic_id: clinicId,
+        clinic_slug: clinicSlug,
+        linked_doctors: linkedDoctors.slice(0, 25).map(d => ({ id: d?.id || '', name_ru: d?.name_ru || '' }))
+      });
+      return;
+    }
+
+    await deleteTableRecord('clinics', clinicId);
+    sendJson(res, 200, { ok: true, deleted: 'clinic', clinic_id: clinicId, clinic_slug: clinicSlug });
+  } catch (e) {
+    sendJson(res, 400, { ok: false, error: e.message || 'Clinic delete failed' });
+  }
+}
+
+async function handleTreatmentDelete(req, res, treatmentId) {
+  try {
+    const [treatment, doctors] = await Promise.all([
+      fetchTableRecord('treatments', treatmentId),
+      fetchTableRows('doctors', 2000)
+    ]);
+
+    const treatmentSlug = normalizeSlug(treatment?.slug || treatment?.id || treatmentId);
+    if (!treatmentSlug) throw new Error('Treatment slug is empty');
+
+    const linkedDoctors = getLinkedDoctorsByTreatment(doctors, treatmentSlug);
+    if (linkedDoctors.length > 0) {
+      sendJson(res, 409, {
+        ok: false,
+        error: `Delete forbidden: treatment is linked to ${linkedDoctors.length} doctor(s)`,
+        code: 'TREATMENT_LINKED_DOCTORS',
+        treatment_id: treatmentId,
+        treatment_slug: treatmentSlug,
+        linked_doctors: linkedDoctors.slice(0, 25).map(d => ({ id: d?.id || '', name_ru: d?.name_ru || '' }))
+      });
+      return;
+    }
+
+    await deleteTableRecord('treatments', treatmentId);
+    sendJson(res, 200, { ok: true, deleted: 'treatment', treatment_id: treatmentId, treatment_slug: treatmentSlug });
+  } catch (e) {
+    sendJson(res, 400, { ok: false, error: e.message || 'Treatment delete failed' });
   }
 }
 
@@ -383,7 +556,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(204, {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+      'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS'
     });
     res.end();
     return;
@@ -416,6 +589,30 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === '/admin/publish/sitemap') {
       await handleSitemapPublish(req, res);
+      return;
+    }
+
+    if (url.pathname === '/admin/relations/validate-doctor') {
+      await handleValidateDoctorRelations(req, res);
+      return;
+    }
+  }
+
+  if (req.method === 'DELETE') {
+    if (!assertAuthorized(req)) {
+      sendJson(res, 401, { ok: false, error: 'Unauthorized publish request' });
+      return;
+    }
+
+    const clinicRoute = url.pathname.match(/^\/admin\/clinics\/([^/]+)$/i);
+    if (clinicRoute) {
+      await handleClinicDelete(req, res, clinicRoute[1]);
+      return;
+    }
+
+    const treatmentRoute = url.pathname.match(/^\/admin\/treatments\/([^/]+)$/i);
+    if (treatmentRoute) {
+      await handleTreatmentDelete(req, res, treatmentRoute[1]);
       return;
     }
   }
