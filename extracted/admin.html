@@ -227,14 +227,17 @@
                     <p>Добавление, редактирование и удаление профилей врачей</p>
                 </div>
                 <div class="admin-card">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;gap:10px;flex-wrap:wrap;">
                         <div class="admin-card__title" style="margin-bottom:0;"><i class="fas fa-list"></i> Список врачей</div>
-                        <button class="btn btn--primary btn--sm" onclick="openDoctorForm()"><i class="fas fa-plus"></i> Добавить врача</button>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <button class="btn btn--secondary btn--sm" onclick="refreshDoctorProfileStatuses(true)"><i class="fas fa-link"></i> Проверить SEO-страницы</button>
+                            <button class="btn btn--primary btn--sm" onclick="openDoctorForm()"><i class="fas fa-plus"></i> Добавить врача</button>
+                        </div>
                     </div>
                     <div style="overflow-x:auto;">
                         <table class="data-table" id="doctorsTable">
-                            <thead><tr><th>Фото</th><th>ФИО</th><th>Специальность</th><th>Клиника</th><th>Профили лечения</th><th>Онлайн</th><th>Действия</th></tr></thead>
-                            <tbody id="doctorsBody"><tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:40px;">Загрузка...</td></tr></tbody>
+                            <thead><tr><th>Фото</th><th>ФИО</th><th>Специальность</th><th>Клиника</th><th>Профили лечения</th><th>SEO</th><th>Онлайн</th><th>Действия</th></tr></thead>
+                            <tbody id="doctorsBody"><tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:40px;">Загрузка...</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -446,6 +449,7 @@
     let doctorsList = [];
     let clinicsList = [];
     let treatmentsList = [];
+    let doctorProfileStatusCache = {};
 
     function normalizeSlug(value) {
         return (value || '').trim().toLowerCase();
@@ -571,6 +575,38 @@
         return (value || '').split(',').map(v => v.trim()).filter(Boolean);
     }
 
+    async function staticDoctorPageExists(doctorId) {
+        const staticUrl = `vrachi/${encodeURIComponent(doctorId)}.html`;
+        try {
+            const headRes = await fetch(staticUrl, { method: 'HEAD' });
+            if (headRes.ok) return true;
+            if (headRes.status !== 405) return false;
+            const getRes = await fetch(staticUrl, { method: 'GET' });
+            return getRes.ok;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    async function refreshDoctorProfileStatuses(showResultToast = false) {
+        if (!doctorsList.length) return;
+
+        const checks = doctorsList.map(async (d) => {
+            const id = d.id;
+            if (!id) return;
+            doctorProfileStatusCache[id] = await staticDoctorPageExists(id);
+        });
+
+        await Promise.all(checks);
+        renderDoctorsTable();
+
+        if (showResultToast) {
+            const staticCount = doctorsList.filter(d => doctorProfileStatusCache[d.id]).length;
+            const fallbackCount = doctorsList.length - staticCount;
+            showToast(`Проверка SEO-страниц: статических ${staticCount}, fallback ${fallbackCount}`, 'success');
+        }
+    }
+
     function getDoctorSelectedTreatmentSlugs() {
         return Array.from(document.querySelectorAll('#docTreatmentsSelect input[type="checkbox"]:checked')).map(el => normalizeSlug(el.value));
     }
@@ -604,14 +640,16 @@
             if (!res.ok) throw new Error(await getErrorText(res));
             const data = await res.json();
             doctorsList = data.data || [];
+            doctorProfileStatusCache = {};
             renderDoctorsTable();
-        } catch (e) { document.getElementById('doctorsBody').innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;">Нет данных. Добавьте первого врача.</td></tr>'; showToast('Ошибка загрузки врачей: ' + e.message, 'error'); }
+            refreshDoctorProfileStatuses();
+        } catch (e) { document.getElementById('doctorsBody').innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;">Нет данных. Добавьте первого врача.</td></tr>'; showToast('Ошибка загрузки врачей: ' + e.message, 'error'); }
     }
 
     function renderDoctorsTable() {
         const tbody = document.getElementById('doctorsBody');
         if (doctorsList.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:40px;">Нет врачей. Нажмите «Добавить врача».</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:40px;">Нет врачей. Нажмите «Добавить врача».</td></tr>';
             return;
         }
         tbody.innerHTML = doctorsList.map(d => {
@@ -622,12 +660,20 @@
             }).slice(0, 2);
             const treatmentCell = treatmentNames.length ? `${treatmentNames.join(', ')}${treatmentSlugs.length > 2 ? ' +' + (treatmentSlugs.length - 2) : ''}` : '—';
 
+            const isStatic = !!doctorProfileStatusCache[d.id];
+            const seoBadge = isStatic
+                ? '<span class="status-badge status-badge--processed">Статическая</span>'
+                : '<span class="status-badge status-badge--new">Fallback template</span>';
+            const staticUrl = `vrachi/${encodeURIComponent(d.id || '')}.html`;
+            const fallbackUrl = `vrachi/template.html?id=${encodeURIComponent(d.id || '')}`;
+
             return `<tr>
                 <td>${d.photo_url ? `<img src="${d.photo_url}" class="img-preview">` : '<div class="img-preview img-preview--placeholder"><i class="fas fa-user"></i></div>'}</td>
                 <td><strong>${d.name_ru || '—'}</strong><br><small style="color:var(--text-light)">${d.name_en || ''}</small></td>
                 <td>${d.specialty || '—'}</td>
                 <td>${d.clinic_name || '—'}</td>
                 <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;">${treatmentCell}</td>
+                <td>${seoBadge}<div style="margin-top:4px;"><a href="${isStatic ? staticUrl : fallbackUrl}" target="_blank" style="font-size:0.72rem;">Открыть</a></div></td>
                 <td>${d.online_consultation ? '<i class="fas fa-check" style="color:var(--success)"></i>' : '<i class="fas fa-times" style="color:var(--text-light)"></i>'}</td>
                 <td class="actions">
                     <button class="btn btn--secondary btn--sm" onclick="editDoctor('${d.id}')"><i class="fas fa-pen"></i></button>
