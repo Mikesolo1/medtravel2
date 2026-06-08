@@ -1083,17 +1083,6 @@
         `).join('');
     }
 
-    let contentBlocks = [];
-
-    function parsePageBlocks(raw) {
-        if (Array.isArray(raw)) return raw;
-        if (typeof raw === 'string' && raw.trim()) {
-            try { const v = JSON.parse(raw); return Array.isArray(v) ? v : []; }
-            catch (e) { return []; }
-        }
-        return [];
-    }
-
     function selectPage(pageId) {
         selectedPageId = pageId;
         const page = pages.find(p => p.id === pageId);
@@ -1102,71 +1091,8 @@
         document.getElementById('editMetaDesc').value = page.meta_description || '';
         document.getElementById('editH1').value = page.h1 || '';
         document.getElementById('editHeroText').value = page.hero_text || '';
-        contentBlocks = parsePageBlocks(page.content_blocks);
-        renderContentBlocksEditor();
         document.getElementById('pageEditor').style.display = 'block';
         renderPageSelector();
-    }
-
-    function renderContentBlocksEditor() {
-        const box = document.getElementById('contentBlocksEditor');
-        if (!box) return;
-        if (!contentBlocks.length) {
-            box.innerHTML = '<p style="font-size:0.8125rem;color:var(--text-light);">Блоков нет. Контент берётся из статического HTML. Добавьте блок, чтобы переопределить.</p>';
-            return;
-        }
-        box.innerHTML = contentBlocks.map((b, i) => {
-            const isFeatures = b.type === 'features';
-            const bodyField = isFeatures
-                ? `<div class="form-group"><label>Пункты (по одному на строку)</label><textarea rows="4" oninput="updateBlockField(${i},'items',this.value)" placeholder="Пункт 1&#10;Пункт 2">${escapeHtml((b.items || []).join('\n'))}</textarea></div>`
-                : `<div class="form-group"><label>Текст (пустая строка = новый абзац)</label><textarea rows="4" oninput="updateBlockField(${i},'text',this.value)">${escapeHtml(b.text || '')}</textarea></div>`;
-            return `<div style="border:1.5px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px;background:var(--bg);">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap;">
-                    <strong style="font-size:0.8125rem;">Блок ${i + 1}: ${isFeatures ? 'Список-галочки' : 'Текст'}</strong>
-                    <div style="display:flex;gap:6px;">
-                        <button class="btn btn--secondary btn--sm" onclick="moveContentBlock(${i},-1)" ${i === 0 ? 'disabled' : ''}><i class="fas fa-arrow-up"></i></button>
-                        <button class="btn btn--secondary btn--sm" onclick="moveContentBlock(${i},1)" ${i === contentBlocks.length - 1 ? 'disabled' : ''}><i class="fas fa-arrow-down"></i></button>
-                        <button class="btn btn--danger btn--sm" onclick="removeContentBlock(${i})"><i class="fas fa-trash"></i></button>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group"><label>Надзаголовок (label)</label><input type="text" value="${escapeHtml(b.label || '')}" oninput="updateBlockField(${i},'label',this.value)" placeholder="Показания"></div>
-                    <div class="form-group"><label>Заголовок H2</label><input type="text" value="${escapeHtml(b.title || '')}" oninput="updateBlockField(${i},'title',this.value)" placeholder="Когда обратиться"></div>
-                </div>
-                ${bodyField}
-                <label style="font-size:0.75rem;color:var(--text-light);"><input type="checkbox" ${b.alt ? 'checked' : ''} onchange="updateBlockField(${i},'alt',this.checked)"> Альтернативный фон секции</label>
-            </div>`;
-        }).join('');
-    }
-
-    function addContentBlock(type) {
-        contentBlocks.push(type === 'features'
-            ? { type: 'features', label: '', title: '', items: [], alt: contentBlocks.length % 2 === 1 }
-            : { type: 'text', label: '', title: '', text: '', alt: contentBlocks.length % 2 === 1 });
-        renderContentBlocksEditor();
-    }
-
-    function updateBlockField(i, field, value) {
-        if (!contentBlocks[i]) return;
-        if (field === 'items') {
-            contentBlocks[i].items = String(value).split('\n').map(s => s.trim()).filter(Boolean);
-        } else {
-            contentBlocks[i][field] = value;
-        }
-    }
-
-    function removeContentBlock(i) {
-        contentBlocks.splice(i, 1);
-        renderContentBlocksEditor();
-    }
-
-    function moveContentBlock(i, dir) {
-        const j = i + dir;
-        if (j < 0 || j >= contentBlocks.length) return;
-        const tmp = contentBlocks[i];
-        contentBlocks[i] = contentBlocks[j];
-        contentBlocks[j] = tmp;
-        renderContentBlocksEditor();
     }
 
     async function savePageContent() {
@@ -1175,8 +1101,7 @@
             meta_title: document.getElementById('editMetaTitle').value,
             meta_description: document.getElementById('editMetaDesc').value,
             h1: document.getElementById('editH1').value,
-            hero_text: document.getElementById('editHeroText').value,
-            content_blocks: JSON.stringify(contentBlocks)
+            hero_text: document.getElementById('editHeroText').value
         };
         try {
             const res = await fetch(`${API_BASE}/page_content/${selectedPageId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
