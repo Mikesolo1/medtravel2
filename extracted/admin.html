@@ -213,6 +213,17 @@
                             <textarea id="editHeroText" placeholder="Основной описательный текст" rows="4"></textarea>
                         </div>
                     </div>
+                    <div class="admin-card">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:10px;flex-wrap:wrap;">
+                            <div class="admin-card__title" style="margin-bottom:0;"><i class="fas fa-layer-group"></i> Контент-блоки страницы</div>
+                            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                <button class="btn btn--secondary btn--sm" onclick="addContentBlock('text')"><i class="fas fa-plus"></i> Текстовый блок</button>
+                                <button class="btn btn--secondary btn--sm" onclick="addContentBlock('features')"><i class="fas fa-plus"></i> Список-галочки</button>
+                            </div>
+                        </div>
+                        <p style="font-size:0.75rem;color:var(--text-light);margin-bottom:14px;">Блоки выводятся в контейнер <code>data-content-blocks</code> на странице (клиники, направления и т.д.). Если блоков нет — остаётся статический HTML.</p>
+                        <div id="contentBlocksEditor"></div>
+                    </div>
                     <div style="display:flex;gap:12px;flex-wrap:wrap;">
                         <button class="btn btn--primary" onclick="savePageContent()"><i class="fas fa-save"></i> Сохранить изменения</button>
                         <button class="btn btn--secondary" onclick="resetPageEditor()"><i class="fas fa-undo"></i> Отменить</button>
