@@ -233,6 +233,7 @@
                             <button class="btn btn--secondary btn--sm" onclick="refreshDoctorProfileStatuses(true)"><i class="fas fa-link"></i> Проверить SEO-страницы</button>
                             <button class="btn btn--secondary btn--sm" onclick="bulkPublishFallbackDoctorPages()"><i class="fas fa-file-zipper"></i> Скачать SEO для fallback</button>
                             <button class="btn btn--secondary btn--sm" onclick="exportFallbackSeoPackage()"><i class="fas fa-box-archive"></i> Экспорт SEO-пакета</button>
+                            <button class="btn btn--secondary btn--sm" onclick="exportSeoPublishManifest()"><i class="fas fa-file-csv"></i> SEO manifest CSV</button>
                             <button class="btn btn--secondary btn--sm" onclick="runIntegrationChecks()"><i class="fas fa-vial-circle-check"></i> Тест-баги интеграций</button>
                             <button class="btn btn--primary btn--sm" onclick="openDoctorForm()"><i class="fas fa-plus"></i> Добавить врача</button>
                         </div>
@@ -726,6 +727,11 @@
         setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
+    function csvEscape(value) {
+        const raw = String(value ?? '');
+        return `"${raw.replace(/"/g, '""')}"`;
+    }
+
     async function publishDoctorStaticPageById(id) {
         const doctor = doctorsList.find(d => d.id === id);
         if (!doctor) {
@@ -852,6 +858,84 @@
             }
         } catch (e) {
             showToast('Ошибка экспорта SEO-пакета: ' + e.message, 'error');
+        }
+    }
+
+    async function exportSeoPublishManifest() {
+        try {
+            if (!doctorsList.length) await loadDoctors();
+            if (!clinicsList.length) await loadClinics();
+            if (!treatmentsList.length) await loadTreatments();
+            await refreshDoctorProfileStatuses(false);
+
+            const clinicMap = new Map(clinicsList.map(c => [normalizeSlug(c.slug), c.name_ru || c.slug || '']));
+            const treatmentMap = new Map(treatmentsList.map(t => [normalizeSlug(t.slug || t.id), t.name_ru || t.slug || t.id || '']));
+
+            const now = new Date();
+            const datePart = now.toISOString().slice(0, 10);
+            const header = [
+                'doctor_id',
+                'doctor_name_ru',
+                'clinic_slug',
+                'clinic_name',
+                'specialty',
+                'treatment_slugs',
+                'treatment_names',
+                'seo_status',
+                'source_url',
+                'target_path'
+            ];
+
+            const rows = doctorsList
+                .filter(d => d.id)
+                .map(d => {
+                    const doctorId = normalizeSlug(d.id);
+                    const clinicSlug = normalizeSlug(d.clinic_slug);
+                    const treatmentSlugs = parseCsv(d.treatment_slugs).map(normalizeSlug).filter(Boolean);
+                    const treatmentNames = treatmentSlugs.map(slug => treatmentMap.get(slug) || slug);
+                    const seoStatus = doctorProfileStatusCache[d.id] ? 'static' : 'fallback';
+                    return [
+                        doctorId,
+                        d.name_ru || '',
+                        clinicSlug,
+                        clinicMap.get(clinicSlug) || d.clinic_name || '',
+                        d.specialty || '',
+                        treatmentSlugs.join(','),
+                        treatmentNames.join(','),
+                        seoStatus,
+                        `vrachi/template.html?id=${encodeURIComponent(doctorId)}`,
+                        `vrachi/${doctorId}.html`
+                    ];
+                });
+
+            const csvContent = [header, ...rows]
+                .map(cols => cols.map(csvEscape).join(','))
+                .join('\n');
+            downloadTextFile(`seo_publish_manifest_${datePart}.csv`, csvContent);
+
+            const staticCount = rows.filter(r => r[7] === 'static').length;
+            const fallbackCount = rows.length - staticCount;
+            const checklist = [
+                'SEO publish checklist',
+                `Generated at: ${now.toISOString()}`,
+                `Total doctors: ${rows.length}`,
+                `Static pages already present: ${staticCount}`,
+                `Fallback pages to publish: ${fallbackCount}`,
+                '',
+                'Recommended flow:',
+                '1) Open manifest CSV and filter seo_status = fallback.',
+                '2) Generate files via admin bulk publish/export package.',
+                '3) Place resulting *.html files into /vrachi/.',
+                '4) Deploy and run SEO status check again in admin.',
+                '',
+                'Fallback doctor IDs:',
+                ...rows.filter(r => r[7] === 'fallback').map(r => `- ${r[0]}`)
+            ];
+            downloadTextFile('seo_publish_checklist.txt', checklist.join('\n'));
+
+            showToast(`SEO manifest экспортирован: fallback ${fallbackCount}, static ${staticCount}`, fallbackCount > 0 ? 'error' : 'success');
+        } catch (e) {
+            showToast('Ошибка экспорта SEO manifest: ' + e.message, 'error');
         }
     }
 
