@@ -124,7 +124,13 @@
         'nevrologiya': 'neurology',
         'ortopediya': 'orthopedics',
         'urologiya': 'urology',
-        'onkologiya': 'oncology'
+        'onkologiya': 'oncology',
+        'dermatologiya': 'dermatology',
+        'lor': 'ent',
+        'proktologiya': 'proctology',
+        'stomatologiya': 'dentistry',
+        'terapiya': 'therapy',
+        'endokrinologiya': 'endocrinology'
     };
 
     function getFilterKey(d) {
