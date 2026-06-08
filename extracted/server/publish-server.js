@@ -302,6 +302,40 @@ async function deleteTableRecord(table, id) {
   }
 }
 
+async function patchTableRecord(table, id, payload) {
+  const url = `${TABLES_API_BASE}/${encodeURIComponent(table)}/${encodeURIComponent(id)}`;
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {})
+  });
+  if (!response.ok) {
+    throw new Error(`${table}/${id} patch failed: HTTP ${response.status}`);
+  }
+  try {
+    return await response.json();
+  } catch (_) {
+    return {};
+  }
+}
+
+async function createTableRecord(table, payload) {
+  const url = `${TABLES_API_BASE}/${encodeURIComponent(table)}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {})
+  });
+  if (!response.ok) {
+    throw new Error(`${table} create failed: HTTP ${response.status}`);
+  }
+  try {
+    return await response.json();
+  } catch (_) {
+    return {};
+  }
+}
+
 async function fetchSiteBaseUrl() {
   try {
     const settings = await fetchTableRows('site_settings', 500);
@@ -358,8 +392,71 @@ function getLinkedDoctorsByClinic(doctors, clinicSlug) {
   return doctors.filter(d => normalizeSlug(d?.clinic_slug) === clinicSlug);
 }
 
-function getLinkedDoctorsByTreatment(doctors, treatmentSlug) {
+function getLinkedDoctorsByTreatment(doctors, treatmentSlug, pivotLinks = []) {
+  if (Array.isArray(pivotLinks) && pivotLinks.length > 0) {
+    const doctorIds = new Set(
+      pivotLinks
+        .filter(link => normalizeSlug(link?.treatment_slug) === treatmentSlug)
+        .map(link => normalizeSlug(link?.doctor_id))
+        .filter(Boolean)
+    );
+    return doctors.filter(d => doctorIds.has(normalizeSlug(d?.id)));
+  }
+
   return doctors.filter(d => normalizeSlugList(d?.treatment_slugs).includes(treatmentSlug));
+}
+
+function checkStaticDoctorFileExists(doctorId) {
+  const slug = normalizeSlug(doctorId);
+  if (!slug || !isValidSlug(slug)) return false;
+  const filePath = path.join(DOCTORS_DIR, `${slug}.html`);
+  return fs.existsSync(filePath);
+}
+
+function buildStaticStatusMap(doctorIds = []) {
+  const statuses = {};
+  const normalized = Array.isArray(doctorIds) ? doctorIds.map(normalizeSlug).filter(Boolean) : [];
+  normalized.forEach(id => {
+    statuses[id] = checkStaticDoctorFileExists(id);
+  });
+  return statuses;
+}
+
+async function fetchDoctorTreatmentPivotRowsSafe() {
+  try {
+    return await fetchTableRows('doctor_treatments', 5000);
+  } catch (e) {
+    return [];
+  }
+}
+
+async function updateDoctorSeoStateSafe(doctorId, seoStatus, publishError = '') {
+  const normalizedDoctorId = normalizeSlug(doctorId);
+  if (!normalizedDoctorId) return;
+
+  try {
+    await patchTableRecord('doctors', normalizedDoctorId, {
+      seo_status: String(seoStatus || '').trim(),
+      seo_last_error: String(publishError || '').trim(),
+      seo_last_checked_at: new Date().toISOString()
+    });
+  } catch (e) {
+    // Do not block publish flow if metadata update fails
+  }
+}
+
+async function appendSeoPublishLogSafe({ doctor_id = '', status = '', message = '', source = 'publish-server' }) {
+  try {
+    await createTableRecord('seo_publish_logs', {
+      doctor_id: normalizeSlug(doctor_id),
+      status: String(status || '').trim(),
+      message: String(message || '').slice(0, 2000),
+      source: String(source || 'publish-server').trim(),
+      created_at: new Date().toISOString()
+    });
+  } catch (e) {
+    // Logging must be non-blocking
+  }
 }
 
 async function upsertDoctorIntoSitemap(slug, siteBaseUrl) {
@@ -411,6 +508,15 @@ async function handlePublishOne(req, res, doctorId, dryRun) {
     const siteBaseUrl = await fetchSiteBaseUrl();
     const sitemap = dryRun ? { updated: false, reason: 'dry_run' } : await upsertDoctorIntoSitemap(result.slug, siteBaseUrl);
 
+    if (!dryRun) {
+      await updateDoctorSeoStateSafe(result.slug, 'published', '');
+      await appendSeoPublishLogSafe({
+        doctor_id: result.slug,
+        status: 'published',
+        message: `Published ${result.file_name}`
+      });
+    }
+
     sendJson(res, 200, {
       ok: true,
       dry_run: dryRun,
@@ -421,7 +527,17 @@ async function handlePublishOne(req, res, doctorId, dryRun) {
       sitemap
     });
   } catch (e) {
-    sendJson(res, 400, { ok: false, error: e.message || 'Publish failed' });
+    const message = e.message || 'Publish failed';
+    const normalizedDoctorId = normalizeSlug(doctorId);
+    if (normalizedDoctorId) {
+      await updateDoctorSeoStateSafe(normalizedDoctorId, 'failed', message);
+      await appendSeoPublishLogSafe({
+        doctor_id: normalizedDoctorId,
+        status: 'failed',
+        message
+      });
+    }
+    sendJson(res, 400, { ok: false, error: message });
   }
 }
 
@@ -440,8 +556,24 @@ async function handlePublishBulk(req, res) {
         const out = publishDoctorFile(doctor, false);
         published.push({ id: out.slug, file_name: out.file_name });
         await upsertDoctorIntoSitemap(out.slug, siteBaseUrl);
+        await updateDoctorSeoStateSafe(out.slug, 'published', '');
+        await appendSeoPublishLogSafe({
+          doctor_id: out.slug,
+          status: 'published',
+          message: `Published ${out.file_name} via bulk`
+        });
       } catch (e) {
-        failed.push({ id: doctor?.id || '', error: e.message || 'Unknown error' });
+        const failedId = normalizeSlug(doctor?.id || '');
+        const errorMessage = e.message || 'Unknown error';
+        failed.push({ id: doctor?.id || '', error: errorMessage });
+        if (failedId) {
+          await updateDoctorSeoStateSafe(failedId, 'failed', errorMessage);
+          await appendSeoPublishLogSafe({
+            doctor_id: failedId,
+            status: 'failed',
+            message: errorMessage
+          });
+        }
       }
     }
 
@@ -491,6 +623,27 @@ async function handleValidateDoctorRelations(req, res) {
   }
 }
 
+async function handleStaticStatusBatch(req, res) {
+  try {
+    const body = await readJsonBody(req);
+    const ids = Array.isArray(body?.doctor_ids) ? body.doctor_ids : [];
+    const normalizedIds = ids.map(normalizeSlug).filter(Boolean);
+    if (!normalizedIds.length) {
+      sendJson(res, 200, { ok: true, statuses: {}, checked_count: 0 });
+      return;
+    }
+
+    const statuses = buildStaticStatusMap(normalizedIds);
+    sendJson(res, 200, {
+      ok: true,
+      statuses,
+      checked_count: normalizedIds.length
+    });
+  } catch (e) {
+    sendJson(res, 400, { ok: false, error: e.message || 'Static status batch failed' });
+  }
+}
+
 async function handleClinicDelete(req, res, clinicId) {
   try {
     const [clinic, doctors] = await Promise.all([
@@ -523,15 +676,16 @@ async function handleClinicDelete(req, res, clinicId) {
 
 async function handleTreatmentDelete(req, res, treatmentId) {
   try {
-    const [treatment, doctors] = await Promise.all([
+    const [treatment, doctors, pivotLinks] = await Promise.all([
       fetchTableRecord('treatments', treatmentId),
-      fetchTableRows('doctors', 2000)
+      fetchTableRows('doctors', 2000),
+      fetchDoctorTreatmentPivotRowsSafe()
     ]);
 
     const treatmentSlug = normalizeSlug(treatment?.slug || treatment?.id || treatmentId);
     if (!treatmentSlug) throw new Error('Treatment slug is empty');
 
-    const linkedDoctors = getLinkedDoctorsByTreatment(doctors, treatmentSlug);
+    const linkedDoctors = getLinkedDoctorsByTreatment(doctors, treatmentSlug, pivotLinks);
     if (linkedDoctors.length > 0) {
       sendJson(res, 409, {
         ok: false,
@@ -594,6 +748,11 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === '/admin/relations/validate-doctor') {
       await handleValidateDoctorRelations(req, res);
+      return;
+    }
+
+    if (url.pathname === '/admin/seo/static-statuses') {
+      await handleStaticStatusBatch(req, res);
       return;
     }
   }
