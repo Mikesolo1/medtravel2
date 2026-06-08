@@ -977,46 +977,31 @@
     async function handleLogin() {
         const pwd = document.getElementById('loginPassword').value;
         if (!pwd) return;
+
         try {
-            try {
-                const loginPayload = await tryServerAdminLogin(pwd);
-                if (loginPayload?.token) {
-                    setAdminAuthToken(loginPayload.token);
-                    backendAuthEnabled = true;
-                    currentPassword = '';
-                    document.getElementById('loginError').style.display = 'none';
-                    showAdminLayout();
-                    bootstrapAdminData();
-                    return;
-                }
-            } catch (serverAuthError) {
-                if (!String(serverAuthError.message || '').includes('404')) {
-                    document.getElementById('loginError').textContent = 'Неверный пароль или backend auth отклонил запрос';
-                    document.getElementById('loginError').style.display = 'block';
-                    return;
-                }
-                backendAuthEnabled = false;
-                console.warn('Backend auth endpoint unavailable, fallback to legacy password check');
+            const loginPayload = await tryServerAdminLogin(pwd);
+            if (!loginPayload?.token) {
+                document.getElementById('loginError').textContent = 'Ошибка авторизации backend';
+                document.getElementById('loginError').style.display = 'block';
+                return;
             }
 
-            const res = await fetch(`${API_BASE}/site_settings?search=admin_password`);
-            const data = await res.json();
-            const record = data.data.find(r => r.key === 'admin_password');
-            if (record && record.value === pwd) {
-                currentPassword = pwd;
-                setAdminAuthToken('');
-                document.getElementById('loginError').style.display = 'none';
-                showAdminLayout();
-                bootstrapAdminData();
-            } else {
-                document.getElementById('loginError').style.display = 'block';
-            }
+            setAdminAuthToken(loginPayload.token);
+            backendAuthEnabled = true;
+            currentPassword = '';
+            document.getElementById('loginError').textContent = 'Неверный пароль';
+            document.getElementById('loginError').style.display = 'none';
+            showAdminLayout();
+            bootstrapAdminData();
         } catch (e) {
             const msg = String(e.message || '');
             if (msg.toLowerCase().includes('invalid admin credentials') || msg.includes('401')) {
+                document.getElementById('loginError').textContent = 'Неверный пароль';
                 document.getElementById('loginError').style.display = 'block';
             } else {
-                showToast('Ошибка подключения к серверу', 'error');
+                document.getElementById('loginError').textContent = 'Backend auth недоступен: вход временно невозможен';
+                document.getElementById('loginError').style.display = 'block';
+                showToast('Ошибка подключения к backend auth', 'error');
             }
         }
     }

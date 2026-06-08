@@ -336,11 +336,65 @@ function verifyAdminSessionToken(token) {
   }
 }
 
-async function fetchAdminPassword() {
+function createPasswordHash(password, saltHex = '') {
+  const rawPassword = String(password || '');
+  const salt = saltHex ? Buffer.from(saltHex, 'hex') : crypto.randomBytes(16);
+  const hash = crypto.scryptSync(rawPassword, salt, 64);
+  return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`;
+}
+
+function verifyPasswordHash(password, storedHash) {
+  const rawStored = String(storedHash || '').trim();
+  if (!rawStored.startsWith('scrypt$')) return false;
+  const parts = rawStored.split('$');
+  if (parts.length !== 3) return false;
+
+  const [, saltHex, expectedHex] = parts;
+  if (!saltHex || !expectedHex) return false;
+
+  try {
+    const salt = Buffer.from(saltHex, 'hex');
+    const expected = Buffer.from(expectedHex, 'hex');
+    const actual = crypto.scryptSync(String(password || ''), salt, expected.length);
+    if (actual.length !== expected.length) return false;
+    return crypto.timingSafeEqual(actual, expected);
+  } catch (_) {
+    return false;
+  }
+}
+
+async function resolveAdminPasswordHash() {
   try {
     const settings = await fetchTableRows('site_settings', 500);
-    const record = settings.find(item => String(item?.key || '').trim() === 'admin_password');
-    return String(record?.value || '').trim();
+    const hashRecord = settings.find(item => String(item?.key || '').trim() === 'admin_password_hash');
+    const existingHash = String(hashRecord?.value || '').trim();
+    if (existingHash.startsWith('scrypt$')) {
+      return existingHash;
+    }
+
+    const plainRecord = settings.find(item => String(item?.key || '').trim() === 'admin_password');
+    const plainPassword = String(plainRecord?.value || '').trim();
+    if (!plainPassword) return '';
+
+    const migratedHash = createPasswordHash(plainPassword);
+    try {
+      if (hashRecord?.id) {
+        await patchTableRecord('site_settings', hashRecord.id, { value: migratedHash });
+      } else {
+        await createTableRecord('site_settings', {
+          key: 'admin_password_hash',
+          value: migratedHash,
+          description: 'Hashed admin password (scrypt)'
+        });
+      }
+      if (plainRecord?.id) {
+        await patchTableRecord('site_settings', plainRecord.id, { value: '' });
+      }
+    } catch (_) {
+      // best-effort migration; do not block login
+    }
+
+    return migratedHash;
   } catch (e) {
     return '';
   }
@@ -703,8 +757,8 @@ async function handleAdminAuthLogin(req, res) {
       return;
     }
 
-    const currentPassword = await fetchAdminPassword();
-    if (!currentPassword || password !== currentPassword) {
+    const passwordHash = await resolveAdminPasswordHash();
+    if (!passwordHash || !verifyPasswordHash(password, passwordHash)) {
       sendJson(res, 401, { ok: false, error: 'Invalid admin credentials' });
       return;
     }
