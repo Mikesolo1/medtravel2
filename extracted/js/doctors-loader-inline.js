@@ -32,6 +32,8 @@
         var clinicSlug = (script.getAttribute('data-clinic') || '').trim();
         var specialtiesRaw = (script.getAttribute('data-specialty') || '').trim();
         var specialties = specialtiesRaw ? specialtiesRaw.split(',').map(function(s) { return s.trim().toLowerCase(); }) : [];
+        var treatmentRaw = (script.getAttribute('data-treatment') || '').trim();
+        var treatmentKeywords = treatmentRaw ? treatmentRaw.split(',').map(function(s) { return s.trim().toLowerCase(); }) : [];
 
         try {
             var resp = await fetch(base + 'tables/doctors?limit=100');
@@ -54,6 +56,16 @@
                     var docTags = (d.tags || '').toLowerCase();
                     return specialties.some(function(s) {
                         return docSpecs.indexOf(s) !== -1 || docTags.indexOf(s) !== -1;
+                    });
+                });
+            }
+
+            // Filter by treatment profile keywords/slugs
+            if (treatmentKeywords.length > 0) {
+                doctors = doctors.filter(function(d) {
+                    var blob = ((d.treatment_slugs || '') + ',' + (d.treatment_names || '') + ',' + (d.tags || '')).toLowerCase();
+                    return treatmentKeywords.some(function(t) {
+                        return blob.indexOf(t) !== -1;
                     });
                 });
             }

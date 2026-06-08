@@ -168,6 +168,7 @@
                 <div class="admin-sidebar__link active" data-tab="pages" onclick="switchTab('pages')"><i class="fas fa-file-alt"></i> Страницы (SEO)</div>
                 <div class="admin-sidebar__link" data-tab="doctors" onclick="switchTab('doctors')"><i class="fas fa-user-doctor"></i> Врачи</div>
                 <div class="admin-sidebar__link" data-tab="clinics" onclick="switchTab('clinics')"><i class="fas fa-hospital"></i> Клиники</div>
+                <div class="admin-sidebar__link" data-tab="treatments" onclick="switchTab('treatments')"><i class="fas fa-notes-medical"></i> Профили лечения</div>
                 <div class="admin-sidebar__link" data-tab="settings" onclick="switchTab('settings')"><i class="fas fa-cog"></i> Настройки</div>
                 <div class="admin-sidebar__link" data-tab="submissions" onclick="switchTab('submissions')"><i class="fas fa-inbox"></i> Заявки</div>
             </nav>
@@ -232,8 +233,8 @@
                     </div>
                     <div style="overflow-x:auto;">
                         <table class="data-table" id="doctorsTable">
-                            <thead><tr><th>Фото</th><th>ФИО</th><th>Специальность</th><th>Клиника</th><th>Онлайн</th><th>Действия</th></tr></thead>
-                            <tbody id="doctorsBody"><tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:40px;">Загрузка...</td></tr></tbody>
+                            <thead><tr><th>Фото</th><th>ФИО</th><th>Специальность</th><th>Клиника</th><th>Профили лечения</th><th>Онлайн</th><th>Действия</th></tr></thead>
+                            <tbody id="doctorsBody"><tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:40px;">Загрузка...</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -254,6 +255,26 @@
                         <table class="data-table" id="clinicsTable">
                             <thead><tr><th>Иконка</th><th>Название</th><th>Город</th><th>Тип</th><th>Специализации</th><th>Действия</th></tr></thead>
                             <tbody id="clinicsBody"><tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:40px;">Загрузка...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TREATMENTS TAB -->
+            <div class="tab-panel" id="tab-treatments">
+                <div class="admin-header">
+                    <h1><i class="fas fa-notes-medical" style="color:var(--secondary);"></i> Профили лечения</h1>
+                    <p>Создание и редактирование профилей лечения с привязкой к врачам</p>
+                </div>
+                <div class="admin-card">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                        <div class="admin-card__title" style="margin-bottom:0;"><i class="fas fa-list"></i> Список профилей лечения</div>
+                        <button class="btn btn--primary btn--sm" onclick="openTreatmentForm()"><i class="fas fa-plus"></i> Добавить профиль лечения</button>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table class="data-table" id="treatmentsTable">
+                            <thead><tr><th>Slug</th><th>Название</th><th>Теги</th><th>Активен</th><th>Действия</th></tr></thead>
+                            <tbody id="treatmentsBody"><tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:40px;">Загрузка...</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -335,6 +356,11 @@
                 <div class="form-group"><label>Теги (через запятую)</label><input type="text" id="docTags" placeholder="Рак молочной железы, Иммунотерапия"></div>
                 <div class="form-group"><label>Языки</label><input type="text" id="docLanguages" placeholder="Русский, Иврит, Английский"></div>
             </div>
+            <div class="form-group">
+                <label>Профили лечения (сопоставление)</label>
+                <div id="docTreatmentsSelect" style="max-height:160px;overflow:auto;border:1.5px solid var(--border);border-radius:8px;padding:10px;background:var(--white);"></div>
+                <small>Выберите один или несколько профилей лечения для привязки врача</small>
+            </div>
             <div class="form-row">
                 <div class="form-group"><label>Онлайн-консультация</label><select id="docOnline"><option value="true">Да</option><option value="false">Нет</option></select></div>
                 <div class="form-group"><label>Порядок отображения</label><input type="number" id="docOrder" value="0"></div>
@@ -381,6 +407,32 @@
         </div>
     </div>
 
+    <!-- TREATMENT MODAL -->
+    <div class="modal-overlay" id="treatmentModal">
+        <div class="modal-box">
+            <h3 id="treatmentModalTitle">Добавить профиль лечения</h3>
+            <input type="hidden" id="treatmentEditId">
+            <div class="form-row">
+                <div class="form-group"><label>Slug (ID)</label><input type="text" id="treatmentSlug" placeholder="onkologiya" pattern="[a-z0-9\-]+"><small>Латиница, цифры и дефис</small></div>
+                <div class="form-group"><label>Активен</label><select id="treatmentActive"><option value="true">Да</option><option value="false">Нет</option></select></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>Название (русский)</label><input type="text" id="treatmentNameRu" placeholder="Онкология"></div>
+                <div class="form-group"><label>Название (English)</label><input type="text" id="treatmentNameEn" placeholder="Oncology"></div>
+            </div>
+            <div class="form-group"><label>Краткое описание</label><textarea id="treatmentShortDesc" rows="3" placeholder="Краткое описание профиля лечения"></textarea></div>
+            <div class="form-group"><label>Полное описание</label><textarea id="treatmentDescription" rows="5" placeholder="Подробное описание лечения"></textarea></div>
+            <div class="form-row">
+                <div class="form-group"><label>Теги (через запятую)</label><input type="text" id="treatmentTags" placeholder="рак, диагностика, иммунотерапия"></div>
+                <div class="form-group"><label>Порядок отображения</label><input type="number" id="treatmentOrder" value="0"></div>
+            </div>
+            <div style="display:flex;gap:12px;margin-top:16px;">
+                <button class="btn btn--primary" onclick="saveTreatment()"><i class="fas fa-save"></i> Сохранить</button>
+                <button class="btn btn--secondary" onclick="closeTreatmentModal()"><i class="fas fa-times"></i> Отмена</button>
+            </div>
+        </div>
+    </div>
+
     <!-- TOAST -->
     <div class="toast" id="toast"></div>
 
@@ -393,6 +445,7 @@
     let selectedPageId = null;
     let doctorsList = [];
     let clinicsList = [];
+    let treatmentsList = [];
 
     function normalizeSlug(value) {
         return (value || '').trim().toLowerCase();
@@ -423,7 +476,7 @@
                 currentPassword = pwd;
                 document.getElementById('loginOverlay').classList.add('hidden');
                 document.getElementById('adminLayout').style.display = 'grid';
-                loadPages().then(() => ensureNapravleniyaPages()); loadSettings(); loadSubmissions(); loadDoctors(); loadClinics();
+                loadPages().then(() => ensureNapravleniyaPages()); loadSettings(); loadSubmissions(); loadDoctors(); loadClinics(); loadTreatments();
             } else {
                 document.getElementById('loginError').style.display = 'block';
             }
@@ -514,6 +567,36 @@
 
     function resetPageEditor() { if (selectedPageId) selectPage(selectedPageId); }
 
+    function parseCsv(value) {
+        return (value || '').split(',').map(v => v.trim()).filter(Boolean);
+    }
+
+    function getDoctorSelectedTreatmentSlugs() {
+        return Array.from(document.querySelectorAll('#docTreatmentsSelect input[type="checkbox"]:checked')).map(el => normalizeSlug(el.value));
+    }
+
+    function renderDoctorTreatmentsSelector(selectedSlugsCsv = '') {
+        const box = document.getElementById('docTreatmentsSelect');
+        if (!box) return;
+
+        const selected = new Set(parseCsv(selectedSlugsCsv).map(normalizeSlug));
+        const activeTreatments = treatmentsList.filter(t => t.is_active !== false);
+
+        if (activeTreatments.length === 0) {
+            box.innerHTML = '<span style="color:var(--text-light);font-size:0.8125rem;">Профили лечения не найдены. Сначала добавьте их во вкладке «Профили лечения».</span>';
+            return;
+        }
+
+        box.innerHTML = activeTreatments
+            .sort((a, b) => (a.order_num || 999) - (b.order_num || 999))
+            .map(t => {
+                const slug = normalizeSlug(t.slug || t.id);
+                const title = t.name_ru || slug;
+                const checked = selected.has(slug) ? 'checked' : '';
+                return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:0.875rem;cursor:pointer;"><input type="checkbox" value="${slug}" ${checked}> ${title} <span style="color:var(--text-light);font-size:0.75rem;">(${slug})</span></label>`;
+            }).join('');
+    }
+
     // --- DOCTORS ---
     async function loadDoctors() {
         try {
@@ -522,26 +605,36 @@
             const data = await res.json();
             doctorsList = data.data || [];
             renderDoctorsTable();
-        } catch (e) { document.getElementById('doctorsBody').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;">Нет данных. Добавьте первого врача.</td></tr>'; showToast('Ошибка загрузки врачей: ' + e.message, 'error'); }
+        } catch (e) { document.getElementById('doctorsBody').innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;">Нет данных. Добавьте первого врача.</td></tr>'; showToast('Ошибка загрузки врачей: ' + e.message, 'error'); }
     }
 
     function renderDoctorsTable() {
         const tbody = document.getElementById('doctorsBody');
         if (doctorsList.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:40px;">Нет врачей. Нажмите «Добавить врача».</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:40px;">Нет врачей. Нажмите «Добавить врача».</td></tr>';
             return;
         }
-        tbody.innerHTML = doctorsList.map(d => `<tr>
-            <td>${d.photo_url ? `<img src="${d.photo_url}" class="img-preview">` : '<div class="img-preview img-preview--placeholder"><i class="fas fa-user"></i></div>'}</td>
-            <td><strong>${d.name_ru || '—'}</strong><br><small style="color:var(--text-light)">${d.name_en || ''}</small></td>
-            <td>${d.specialty || '—'}</td>
-            <td>${d.clinic_name || '—'}</td>
-            <td>${d.online_consultation ? '<i class="fas fa-check" style="color:var(--success)"></i>' : '<i class="fas fa-times" style="color:var(--text-light)"></i>'}</td>
-            <td class="actions">
-                <button class="btn btn--secondary btn--sm" onclick="editDoctor('${d.id}')"><i class="fas fa-pen"></i></button>
-                <button class="btn btn--danger btn--sm" onclick="deleteDoctor('${d.id}')"><i class="fas fa-trash"></i></button>
-            </td>
-        </tr>`).join('');
+        tbody.innerHTML = doctorsList.map(d => {
+            const treatmentSlugs = parseCsv(d.treatment_slugs).map(normalizeSlug);
+            const treatmentNames = treatmentSlugs.map(slug => {
+                const found = treatmentsList.find(t => normalizeSlug(t.slug || t.id) === slug);
+                return found?.name_ru || slug;
+            }).slice(0, 2);
+            const treatmentCell = treatmentNames.length ? `${treatmentNames.join(', ')}${treatmentSlugs.length > 2 ? ' +' + (treatmentSlugs.length - 2) : ''}` : '—';
+
+            return `<tr>
+                <td>${d.photo_url ? `<img src="${d.photo_url}" class="img-preview">` : '<div class="img-preview img-preview--placeholder"><i class="fas fa-user"></i></div>'}</td>
+                <td><strong>${d.name_ru || '—'}</strong><br><small style="color:var(--text-light)">${d.name_en || ''}</small></td>
+                <td>${d.specialty || '—'}</td>
+                <td>${d.clinic_name || '—'}</td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;">${treatmentCell}</td>
+                <td>${d.online_consultation ? '<i class="fas fa-check" style="color:var(--success)"></i>' : '<i class="fas fa-times" style="color:var(--text-light)"></i>'}</td>
+                <td class="actions">
+                    <button class="btn btn--secondary btn--sm" onclick="editDoctor('${d.id}')"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn--danger btn--sm" onclick="deleteDoctor('${d.id}')"><i class="fas fa-trash"></i></button>
+                </td>
+            </tr>`;
+        }).join('');
     }
 
     function openDoctorForm(doctor = null) {
@@ -563,6 +656,7 @@
         document.getElementById('docLanguages').value = doctor?.languages || '';
         document.getElementById('docOnline').value = doctor?.online_consultation ? 'true' : 'false';
         document.getElementById('docOrder').value = doctor?.order_num || 0;
+        renderDoctorTreatmentsSelector(doctor?.treatment_slugs || '');
         document.getElementById('doctorModal').classList.add('show');
     }
 
@@ -579,6 +673,11 @@
         const nameRu = document.getElementById('docNameRu').value.trim();
         const specialty = document.getElementById('docSpecialty').value.trim();
         const clinicSlug = normalizeSlug(document.getElementById('docClinicSlug').value);
+        const selectedTreatmentSlugs = getDoctorSelectedTreatmentSlugs();
+        const selectedTreatmentNames = selectedTreatmentSlugs.map(slug => {
+            const found = treatmentsList.find(t => normalizeSlug(t.slug || t.id) === slug);
+            return found?.name_ru || slug;
+        });
 
         if (!editId && !docId) { showToast('Укажите ID (slug) для врача', 'error'); return; }
         if (!editId && !isValidSlug(docId)) { showToast('ID должен содержать только латиницу, цифры и дефисы', 'error'); return; }
@@ -595,6 +694,14 @@
             return;
         }
 
+        if (selectedTreatmentSlugs.length > 0 && treatmentsList.length > 0) {
+            const unknownTreatment = selectedTreatmentSlugs.find(slug => !treatmentsList.some(t => normalizeSlug(t.slug || t.id) === slug));
+            if (unknownTreatment) {
+                showToast('Профиль лечения не найден: ' + unknownTreatment, 'error');
+                return;
+            }
+        }
+
         const payload = {
             name_ru: nameRu,
             name_en: document.getElementById('docNameEn').value.trim(),
@@ -606,6 +713,8 @@
             photo_url: document.getElementById('docPhotoUrl').value.trim(),
             tags: document.getElementById('docTags').value.trim(),
             languages: document.getElementById('docLanguages').value.trim(),
+            treatment_slugs: selectedTreatmentSlugs.join(','),
+            treatment_names: selectedTreatmentNames.join(','),
             online_consultation: document.getElementById('docOnline').value === 'true',
             order_num: parseInt(document.getElementById('docOrder').value) || 0,
             is_active: document.getElementById('docActive').value === 'true'
@@ -745,6 +854,130 @@
             showToast('Клиника удалена', 'success');
             loadClinics();
         } catch (e) { showToast('Ошибка удаления: ' + e.message, 'error'); }
+    }
+
+    // --- TREATMENTS ---
+    async function loadTreatments() {
+        try {
+            const res = await fetch(`${API_BASE}/treatments?limit=200`);
+            if (!res.ok) throw new Error(await getErrorText(res));
+            const data = await res.json();
+            treatmentsList = data.data || [];
+            renderTreatmentsTable();
+            renderDoctorTreatmentsSelector(document.getElementById('doctorEditId')?.value ? (doctorsList.find(d => d.id === document.getElementById('doctorEditId').value)?.treatment_slugs || '') : '');
+            renderDoctorsTable();
+        } catch (e) {
+            treatmentsList = [];
+            const tbody = document.getElementById('treatmentsBody');
+            if (tbody) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:40px;">Не удалось загрузить профили лечения (${e.message}). Проверьте наличие таблицы treatments.</td></tr>`;
+            }
+        }
+    }
+
+    function renderTreatmentsTable() {
+        const tbody = document.getElementById('treatmentsBody');
+        if (!tbody) return;
+        if (treatmentsList.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:40px;">Нет профилей лечения. Нажмите «Добавить профиль лечения».</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = treatmentsList
+            .sort((a, b) => (a.order_num || 999) - (b.order_num || 999))
+            .map(t => `<tr>
+                <td>${t.slug || t.id || '—'}</td>
+                <td><strong>${t.name_ru || '—'}</strong><br><small style="color:var(--text-light)">${t.name_en || ''}</small></td>
+                <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;">${t.tags || '—'}</td>
+                <td>${t.is_active !== false ? '<i class="fas fa-check" style="color:var(--success)"></i>' : '<i class="fas fa-times" style="color:var(--text-light)"></i>'}</td>
+                <td class="actions">
+                    <button class="btn btn--secondary btn--sm" onclick="editTreatment('${t.id}')"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn--danger btn--sm" onclick="deleteTreatment('${t.id}')"><i class="fas fa-trash"></i></button>
+                </td>
+            </tr>`).join('');
+    }
+
+    function openTreatmentForm(treatment = null) {
+        document.getElementById('treatmentModalTitle').textContent = treatment ? 'Редактировать профиль лечения' : 'Добавить профиль лечения';
+        document.getElementById('treatmentEditId').value = treatment?.id || '';
+        document.getElementById('treatmentSlug').value = treatment?.slug || treatment?.id || '';
+        document.getElementById('treatmentSlug').disabled = !!treatment;
+        document.getElementById('treatmentActive').value = treatment?.is_active !== false ? 'true' : 'false';
+        document.getElementById('treatmentNameRu').value = treatment?.name_ru || '';
+        document.getElementById('treatmentNameEn').value = treatment?.name_en || '';
+        document.getElementById('treatmentShortDesc').value = treatment?.short_description || '';
+        document.getElementById('treatmentDescription').value = treatment?.description || '';
+        document.getElementById('treatmentTags').value = treatment?.tags || '';
+        document.getElementById('treatmentOrder').value = treatment?.order_num || 0;
+        document.getElementById('treatmentModal').classList.add('show');
+    }
+
+    function closeTreatmentModal() {
+        document.getElementById('treatmentModal').classList.remove('show');
+    }
+
+    function editTreatment(id) {
+        const treatment = treatmentsList.find(t => t.id === id);
+        if (treatment) openTreatmentForm(treatment);
+    }
+
+    async function saveTreatment() {
+        const editId = document.getElementById('treatmentEditId').value;
+        const slug = normalizeSlug(document.getElementById('treatmentSlug').value);
+        const nameRu = document.getElementById('treatmentNameRu').value.trim();
+
+        if (!slug) { showToast('Укажите slug профиля лечения', 'error'); return; }
+        if (!isValidSlug(slug)) { showToast('Slug профиля лечения должен содержать только латиницу, цифры и дефисы', 'error'); return; }
+        if (!nameRu) { showToast('Укажите название профиля лечения', 'error'); return; }
+
+        const duplicate = treatmentsList.some(t => normalizeSlug(t.slug || t.id) === slug && t.id !== editId);
+        if (duplicate) { showToast('Профиль лечения с таким slug уже существует', 'error'); return; }
+
+        const payload = {
+            slug,
+            name_ru: nameRu,
+            name_en: document.getElementById('treatmentNameEn').value.trim(),
+            short_description: document.getElementById('treatmentShortDesc').value.trim(),
+            description: document.getElementById('treatmentDescription').value.trim(),
+            tags: document.getElementById('treatmentTags').value.trim(),
+            order_num: parseInt(document.getElementById('treatmentOrder').value) || 0,
+            is_active: document.getElementById('treatmentActive').value === 'true'
+        };
+
+        if (!editId) payload.id = slug;
+
+        try {
+            let res;
+            if (editId) {
+                res = await fetch(`${API_BASE}/treatments/${editId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            } else {
+                res = await fetch(`${API_BASE}/treatments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            }
+            if (!res.ok) throw new Error(await getErrorText(res));
+
+            showToast('Профиль лечения сохранён!', 'success');
+            closeTreatmentModal();
+            loadTreatments();
+        } catch (e) {
+            showToast('Ошибка сохранения профиля лечения: ' + e.message, 'error');
+        }
+    }
+
+    async function deleteTreatment(id) {
+        if (!confirm('Удалить этот профиль лечения?')) return;
+        try {
+            const treatment = treatmentsList.find(t => t.id === id);
+            const treatmentSlug = normalizeSlug(treatment?.slug || treatment?.id || id);
+            const linkedDoctors = doctorsList.filter(d => parseCsv(d.treatment_slugs).map(normalizeSlug).includes(treatmentSlug));
+            if (linkedDoctors.length > 0 && !confirm(`Профиль привязан к ${linkedDoctors.length} врач(ам). Удалить всё равно?`)) return;
+
+            const res = await fetch(`${API_BASE}/treatments/${id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error(await getErrorText(res));
+            showToast('Профиль лечения удалён', 'success');
+            loadTreatments();
+        } catch (e) {
+            showToast('Ошибка удаления профиля лечения: ' + e.message, 'error');
+        }
     }
 
     // --- SETTINGS ---
