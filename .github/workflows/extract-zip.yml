@@ -8,6 +8,9 @@ on:
       - '*.zip'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   extract-and-commit:
     runs-on: ubuntu-latest
@@ -15,6 +18,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Find and extract ZIP archive
         run: |
@@ -36,12 +41,13 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
       
-      - name: Commit changes
+      - name: Commit and push changes
         run: |
           git add extracted/
+          
           if git diff --quiet --cached; then
             echo "Нет изменений для коммита"
           else
             git commit -m "Extract website files from ZIP archive"
-            git push
+            git push origin main
           fi
