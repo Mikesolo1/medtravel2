@@ -84,18 +84,33 @@
         }
     }
 
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function safePhotoUrl(url) {
+        var value = String(url || '').trim();
+        return /^https?:\/\//i.test(value) ? value : '';
+    }
+
     function getDoctorProfileFallbackUrl(d, base) {
         return base + 'vrachi/template.html?id=' + encodeURIComponent(d.id || '');
     }
 
     function renderCard(d, base) {
-        var avatar = d.photo_url
-            ? '<img src="' + d.photo_url + '" alt="' + (d.name_ru || '') + '" onerror="this.parentElement.innerHTML=\'<i class=\\\'fas fa-user-doctor\\\'></i>\'">'
+        var photoUrl = safePhotoUrl(d.photo_url);
+        var avatar = photoUrl
+            ? '<img src="' + escapeHtml(photoUrl) + '" alt="' + escapeHtml(d.name_ru || '') + '">'
             : '<i class="fas fa-user-doctor"></i>';
 
         var tagsArr = (d.tags || '').split(',').slice(0, 4);
         var tags = tagsArr.map(function(t) {
-            return '<span class="doctor-card__tag">' + t.trim() + '</span>';
+            return '<span class="doctor-card__tag">' + escapeHtml(t.trim()) + '</span>';
         }).join('');
 
         var onlineTag = d.online_consultation
@@ -110,13 +125,13 @@
             '<div class="doctor-card__header">' +
                 '<div class="doctor-card__avatar">' + avatar + '</div>' +
                 '<div class="doctor-card__info">' +
-                    '<div class="doctor-card__name"><a class="js-doctor-profile-link" data-doctor-id="' + (d.id || '') + '" data-base="' + base + '" href="' + getDoctorProfileFallbackUrl(d, base) + '">' + (d.name_ru || '') + '</a></div>' +
-                    '<div class="doctor-card__spec">' + (d.specialty || '') + '</div>' +
-                    '<div class="doctor-card__position">' + (d.position || '') + '</div>' +
+                    '<div class="doctor-card__name"><a class="js-doctor-profile-link" data-doctor-id="' + escapeHtml(d.id || '') + '" data-base="' + escapeHtml(base) + '" href="' + getDoctorProfileFallbackUrl(d, base) + '">' + escapeHtml(d.name_ru || '') + '</a></div>' +
+                    '<div class="doctor-card__spec">' + escapeHtml(d.specialty || '') + '</div>' +
+                    '<div class="doctor-card__position">' + escapeHtml(d.position || '') + '</div>' +
                 '</div>' +
             '</div>' +
-            '<div class="doctor-card__clinic"><i class="fas fa-hospital"></i> ' + (d.clinic_name || '') + '</div>' +
-            '<p class="doctor-card__desc">' + (d.description || '') + '</p>' +
+            '<div class="doctor-card__clinic"><i class="fas fa-hospital"></i> ' + escapeHtml(d.clinic_name || '') + '</div>' +
+            '<p class="doctor-card__desc">' + escapeHtml(d.description || '') + '</p>' +
             '<div class="doctor-card__tags">' + tags + onlineTag + langBadge + '</div>' +
             '<a href="' + base + 'kontakty.html" class="doctor-card__btn"><i class="fas fa-calendar-check"></i> Записаться на консультацию</a>' +
         '</div>';
