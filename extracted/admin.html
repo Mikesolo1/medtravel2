@@ -234,6 +234,7 @@
                             <button class="btn btn--secondary btn--sm" onclick="bulkPublishFallbackDoctorPages()"><i class="fas fa-file-zipper"></i> Скачать SEO для fallback</button>
                             <button class="btn btn--secondary btn--sm" onclick="exportFallbackSeoPackage()"><i class="fas fa-box-archive"></i> Экспорт SEO-пакета</button>
                             <button class="btn btn--secondary btn--sm" onclick="exportSeoPublishManifest()"><i class="fas fa-file-csv"></i> SEO manifest CSV</button>
+                            <button class="btn btn--secondary btn--sm" onclick="runSeoDryRunPreview()"><i class="fas fa-list-check"></i> SEO dry-run preview</button>
                             <button class="btn btn--secondary btn--sm" onclick="runIntegrationChecks()"><i class="fas fa-vial-circle-check"></i> Тест-баги интеграций</button>
                             <button class="btn btn--primary btn--sm" onclick="openDoctorForm()"><i class="fas fa-plus"></i> Добавить врача</button>
                         </div>
@@ -936,6 +937,55 @@
             showToast(`SEO manifest экспортирован: fallback ${fallbackCount}, static ${staticCount}`, fallbackCount > 0 ? 'error' : 'success');
         } catch (e) {
             showToast('Ошибка экспорта SEO manifest: ' + e.message, 'error');
+        }
+    }
+
+    async function runSeoDryRunPreview() {
+        try {
+            if (!doctorsList.length) await loadDoctors();
+            await refreshDoctorProfileStatuses(false);
+
+            const fallbackDoctors = doctorsList.filter(d => d.id && !doctorProfileStatusCache[d.id]);
+            const canGenerate = [];
+            const blocked = [];
+
+            fallbackDoctors.forEach((doctor) => {
+                const normalizedId = normalizeSlug(doctor.id);
+                if (!normalizedId || !isValidSlug(normalizedId)) {
+                    blocked.push(`${doctor.name_ru || doctor.id || '(без имени)'} — невалидный id`);
+                    return;
+                }
+                if (!(doctor.name_ru || '').trim()) {
+                    blocked.push(`${doctor.id} — не заполнено ФИО`);
+                    return;
+                }
+
+                canGenerate.push({
+                    id: normalizedId,
+                    name: doctor.name_ru || normalizedId,
+                    specialty: doctor.specialty || '—',
+                    target: `vrachi/${normalizedId}.html`
+                });
+            });
+
+            const summary = `<strong>SEO dry-run preview</strong><br>
+                Fallback-врачей: <strong>${fallbackDoctors.length}</strong><br>
+                Готово к генерации: <strong>${canGenerate.length}</strong><br>
+                Блокеры: <strong>${blocked.length}</strong>`;
+
+            const previewItems = canGenerate.slice(0, 12).map(i => `<li><strong>${escapeHtml(i.id)}</strong> — ${escapeHtml(i.name)} (${escapeHtml(i.specialty)}) → ${escapeHtml(i.target)}</li>`);
+            const blockedItems = blocked.slice(0, 12).map(i => `<li>${escapeHtml(i)}</li>`);
+
+            const details = [
+                canGenerate.length ? `<div style="margin-top:8px;"><strong>Примеры генерации:</strong><ul style="margin:6px 0 0 18px;">${previewItems.join('')}</ul>${canGenerate.length > 12 ? `<div style="margin-top:4px;color:var(--text-light);">и ещё ${canGenerate.length - 12}</div>` : ''}</div>` : '',
+                blocked.length ? `<div style="margin-top:8px;"><strong>Блокеры:</strong><ul style="margin:6px 0 0 18px;">${blockedItems.join('')}</ul>${blocked.length > 12 ? `<div style="margin-top:4px;color:var(--text-light);">и ещё ${blocked.length - 12}</div>` : ''}</div>` : ''
+            ].join('');
+
+            renderIntegrationCheckResult(summary + details, blocked.length > 0);
+            showToast(`Dry-run: готово ${canGenerate.length}, блокеров ${blocked.length}`, blocked.length > 0 ? 'error' : 'success');
+        } catch (e) {
+            renderIntegrationCheckResult(`<strong>Ошибка SEO dry-run:</strong> ${escapeHtml(e.message || 'unknown')}`, true);
+            showToast('Ошибка SEO dry-run: ' + e.message, 'error');
         }
     }
 
