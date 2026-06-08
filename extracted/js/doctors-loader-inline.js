@@ -102,6 +102,30 @@
         return base + 'vrachi/template.html?id=' + encodeURIComponent(d.id || '');
     }
 
+    // Маппинг slug направления -> ключ фильтра на vrachi.html (data-filter)
+    var SPECIALTY_FILTER_MAP = {
+        'allergologiya': 'allergy',
+        'gastroenterologiya': 'gastro',
+        'gematologiya': 'hematology',
+        'genetika': 'genetics',
+        'geriatriya': 'geriatrics',
+        'ginekologiya': 'gynecology',
+        'kardiologiya': 'cardiology',
+        'nevrologiya': 'neurology',
+        'ortopediya': 'orthopedics',
+        'urologiya': 'urology',
+        'onkologiya': 'oncology'
+    };
+
+    function getFilterKey(d) {
+        var slugs = (d.treatment_slugs || '').split(',');
+        for (var i = 0; i < slugs.length; i++) {
+            var key = SPECIALTY_FILTER_MAP[slugs[i].trim().toLowerCase()];
+            if (key) return key;
+        }
+        return '';
+    }
+
     function renderCard(d, base) {
         var photoUrl = safePhotoUrl(d.photo_url);
         var avatar = photoUrl
@@ -121,7 +145,7 @@
             ? '<span class="doctor-card__tag doctor-card__tag--accent">Русский язык</span>'
             : '';
 
-        return '<div class="doctor-card">' +
+        return '<div class="doctor-card" data-specialty="' + escapeHtml(getFilterKey(d)) + '">' +
             '<div class="doctor-card__header">' +
                 '<div class="doctor-card__avatar">' + avatar + '</div>' +
                 '<div class="doctor-card__info">' +
