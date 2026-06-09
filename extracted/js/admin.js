@@ -1987,11 +1987,10 @@
     // --- SETTINGS ---
     async function loadSettings() {
         try {
-            const res = await fetch(`${API_BASE}/site_settings?limit=100`);
-            if (!res.ok) throw new Error(await getErrorText(res));
-            const data = await res.json();
-            settings = {};
-            (data.data || []).forEach(s => { settings[s.key] = s; });
+            // Читаем настройки через авторизованный publish-server (видит секреты:
+            // telegram_bot_token и т.п., которые скрыты в публичном /tables API).
+            const payload = await callPublishJson('/admin/settings', { method: 'GET' });
+            settings = payload.settings || {};
             document.getElementById('settingBotToken').value = settings['telegram_bot_token']?.value || '';
             document.getElementById('settingChatId').value = settings['telegram_chat_id']?.value || '';
             document.getElementById('settingPhone').value = settings['company_phone']?.value || '';
@@ -2013,17 +2012,12 @@
         const newPwd = document.getElementById('settingPassword').value;
         if (newPwd) updates.push({ key: 'admin_password', value: newPwd });
         try {
-            for (const upd of updates) {
-                const record = settings[upd.key];
-                let res;
-                if (record) {
-                    res = await fetch(`${API_BASE}/site_settings/${record.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: upd.value }) });
-                } else {
-                    // Create new setting if it doesn't exist
-                    res = await fetch(`${API_BASE}/site_settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: upd.key, value: upd.value, description: upd.key }) });
-                }
-                if (!res.ok) throw new Error(await getErrorText(res));
-            }
+            // Сохраняем через авторизованный publish-server (пароль хешируется на сервере,
+            // секреты не идут через публичный /tables API).
+            await callPublishJson('/admin/settings', {
+                method: 'POST',
+                body: JSON.stringify({ updates })
+            });
             showToast('Настройки сохранены!', 'success');
             document.getElementById('settingPassword').value = '';
             if (newPwd) currentPassword = newPwd;

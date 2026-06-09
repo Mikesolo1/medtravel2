@@ -158,22 +158,103 @@
     <script src="js/main.js"></script>
     <script src="js/engine.js"></script>
     <script>
-        function handleFormSubmit(e) {
+        async function handleFormSubmit(e) {
             e.preventDefault();
             var form = e.target;
-            // Collect form data and submit via engine
-            var formData = {
-                form_type: 'consultation',
-                name: form.querySelector('[name="name"]') ? form.querySelector('[name="name"]').value : '',
-                phone: form.querySelector('[name="phone"]') ? form.querySelector('[name="phone"]').value : '',
-                email: form.querySelector('[name="email"]') ? form.querySelector('[name="email"]').value : '',
-                message: form.querySelector('[name="message"]') ? form.querySelector('[name="message"]').value : ''
-            };
-            if (window.TaurusForms) {
-                window.TaurusForms.submitForm(formData);
+            var btn = form.querySelector('button[type="submit"]');
+
+            // Хелпер: безопасно читаем значение поля по id
+            function val(id) {
+                var el = document.getElementById(id);
+                return el ? String(el.value || '').trim() : '';
             }
-            form.style.display = 'none';
-            document.getElementById('formSuccess').style.display = 'block';
+
+            var name = val('name');
+            var phone = val('phone');
+            if (!name || !phone) {
+                alert('Пожалуйста, укажите имя и телефон.');
+                return;
+            }
+
+            var city = val('city');
+            var messenger = val('messenger');
+            var requestType = val('request-type');
+            var messageText = val('message');
+
+            // Тип обращения формы контактов -> form_type для Telegram/админки
+            var typeMap = {
+                'consultation': 'consultation',
+                'second-opinion': 'second_opinion',
+                'documents': 'consultation',
+                'program': 'consultation'
+            };
+            var requestTypeLabels = {
+                'consultation': 'Предварительная консультация',
+                'second-opinion': 'Второе мнение онлайн',
+                'documents': 'Отправить документы на оценку',
+                'program': 'Расчёт программы и сроков'
+            };
+
+            // Город / мессенджер / тип обращения добавляем в текст сообщения,
+            // т.к. в form_submissions нет отдельных колонок под них.
+            var extra = [];
+            if (requestType) extra.push('Тип обращения: ' + (requestTypeLabels[requestType] || requestType));
+            if (city) extra.push('Город: ' + city);
+            if (messenger) extra.push('Мессенджер: ' + messenger);
+            var fullMessage = extra.join('\n');
+            if (messageText) fullMessage += (fullMessage ? '\n\n' : '') + messageText;
+
+            var formData = {
+                form_type: typeMap[requestType] || 'consultation',
+                name: name,
+                phone: phone,
+                email: '',
+                message: fullMessage
+            };
+
+            if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Отправка...'; }
+
+            try {
+                if (window.TaurusForms && window.TaurusForms.submitForm) {
+                    await window.TaurusForms.submitForm(formData);
+                } else {
+                    // Фолбэк: серверный эндпоинт (сохраняет заявку + Telegram на сервере)
+                    var resp = await fetch('admin/public/submit-form', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            form_type: formData.form_type,
+                            name: formData.name,
+                            phone: formData.phone,
+                            email: '',
+                            message: formData.message,
+                            page_url: window.location.pathname
+                        })
+                    });
+                    if (!resp.ok) {
+                        // Последний фолбэк: прямая запись в таблицу
+                        await fetch('tables/form_submissions', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                form_type: formData.form_type,
+                                name: formData.name,
+                                phone: formData.phone,
+                                email: '',
+                                message: formData.message,
+                                page_url: window.location.pathname,
+                                status: 'new'
+                            })
+                        });
+                    }
+                }
+                form.style.display = 'none';
+                document.getElementById('formSuccess').style.display = 'block';
+            } catch (err) {
+                console.error('Form submit error:', err);
+                if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane"></i> Отправить заявку'; }
+                alert('Не удалось отправить заявку. Попробуйте ещё раз или позвоните нам.');
+            }
         }
     </script>
 </body>

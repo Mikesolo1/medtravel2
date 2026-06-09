@@ -68,6 +68,26 @@ function rowToRecord(row) {
   return obj;
 }
 
+// Секретные ключи site_settings, которые НЕ должны утекать в публичный API.
+// Для них значение скрывается на чтении, если запрос не от доверенного источника.
+const SECRET_SETTING_KEYS = new Set([
+  'telegram_bot_token',
+  'admin_password',
+  'admin_password_hash'
+]);
+
+const INTERNAL_ACCESS_TOKEN = process.env.INTERNAL_ACCESS_TOKEN || 'taurus-internal';
+
+function redactSettingsRecord(rec) {
+  if (!rec) return rec;
+  const key = String(rec.key || '');
+  if (SECRET_SETTING_KEYS.has(key)) {
+    const hasValue = rec.value != null && String(rec.value) !== '';
+    return { ...rec, value: '', value_set: hasValue };
+  }
+  return rec;
+}
+
 function listRecords(table, query) {
   const rows = db.prepare(`SELECT * FROM ${table}`).all();
   let records = rows.map(rowToRecord);
@@ -210,11 +230,18 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 404, { error: `unknown table: ${table}` });
     }
 
+    // Доверенный внутренний доступ (publish-server, admin-прокси) видит секреты.
+    const internalAccess = String(req.headers['x-internal-access'] || '') === INTERNAL_ACCESS_TOKEN;
+
     // Collection endpoints
     if (!id) {
       if (req.method === 'GET') {
         const query = Object.fromEntries(url.searchParams.entries());
-        return sendJson(res, 200, listRecords(table, query));
+        const result = listRecords(table, query);
+        if (table === 'site_settings' && !internalAccess && Array.isArray(result.data)) {
+          result.data = result.data.map(redactSettingsRecord);
+        }
+        return sendJson(res, 200, result);
       }
       if (req.method === 'POST') {
         const body = await readBody(req);
@@ -228,6 +255,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET') {
       const rec = getRecord(table, id);
       if (!rec) return sendJson(res, 404, { error: 'not found' });
+      if (table === 'site_settings' && !internalAccess) {
+        return sendJson(res, 200, redactSettingsRecord(rec));
+      }
       return sendJson(res, 200, rec);
     }
     if (req.method === 'PUT') {

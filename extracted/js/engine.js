@@ -22,6 +22,14 @@
         }
         return 'tables';
     })();
+
+    // Publish-server base (proxied by Nginx at /admin/). Public lead endpoint lives there
+    // so the Telegram bot token never reaches the browser.
+    const PUBLISH_SUBMIT_URL = (function() {
+        // API_BASE is 'tables' (root pages) or '../tables' (sub-folder pages like /vrachi/x.html)
+        const prefix = API_BASE === '../tables' ? '../' : '';
+        return prefix + 'admin/public/submit-form';
+    })();
     
     // ===== UTM TRACKING =====
     const UTM_PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'];
@@ -258,19 +266,45 @@
             status: 'new'
         };
 
-        // Save to API
+        // Preferred path: server-side endpoint saves the lead AND sends Telegram
+        // (bot token stays on the server, never exposed to the browser).
         try {
-            await fetch(`${API_BASE}/form_submissions`, {
+            const res = await fetch(PUBLISH_SUBMIT_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
+            if (res.ok) {
+                const data = await res.json().catch(() => ({}));
+                if (data && data.ok) {
+                    return true;
+                }
+            }
+            // Non-OK or ok:false → fall through to legacy fallback below
+        } catch(e) {
+            console.warn('Server submit failed, using fallback:', e);
+        }
+
+        // Fallback (legacy): save directly to the table API + browser Telegram.
+        // Used only if the server endpoint is unreachable.
+        let saved = false;
+        try {
+            const apiRes = await fetch(`${API_BASE}/form_submissions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            saved = apiRes.ok;
         } catch(e) {
             console.error('API save error:', e);
         }
 
-        // Send to Telegram
-        await sendToTelegram(payload);
+        if (!saved) {
+            throw new Error('Submission failed');
+        }
+
+        // Best-effort browser Telegram (only reachable if token is in public settings)
+        try { await sendToTelegram(payload); } catch(e) {}
 
         return true;
     }
