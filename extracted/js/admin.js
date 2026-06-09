@@ -1338,9 +1338,9 @@
             .sort((a, b) => (a.order_num || 999) - (b.order_num || 999))
             .map(t => {
                 const slug = normalizeSlug(t.slug || t.id);
-                const title = t.name_ru || slug;
+                const title = escapeHtml(t.name_ru || slug);
                 const checked = selected.has(slug) ? 'checked' : '';
-                return `<label title="${title} (${slug})" style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:0.875rem;cursor:pointer;min-width:0;"><input type="checkbox" value="${slug}" ${checked} style="flex:0 0 auto;"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">${title} <span style="color:var(--text-light);font-size:0.75rem;">(${slug})</span></span></label>`;
+                return `<label title="${title} (${slug})" style="display:flex;align-items:flex-start;gap:8px;padding:6px 8px;border-radius:6px;font-size:0.875rem;line-height:1.35;cursor:pointer;"><input type="checkbox" value="${escapeHtml(slug)}" ${checked} style="flex:0 0 auto;margin-top:3px;"><span style="flex:1 1 auto;color:var(--text);">${title} <span style="color:var(--text-light);font-size:0.75rem;">(${escapeHtml(slug)})</span></span></label>`;
             }).join('');
     }
 
