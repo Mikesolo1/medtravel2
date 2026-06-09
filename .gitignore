@@ -11,3 +11,8 @@ node_modules/
 extracted/server/data.db
 extracted/server/data.db-wal
 extracted/server/data.db-shm
+
+# Сгенерированные страницы врачей (создаются publish-server из БД на проде).
+# template.html — единственный отслеживаемый файл в каталоге.
+extracted/vrachi/*.html
+!extracted/vrachi/template.html

@@ -52,7 +52,13 @@ const SPECIALTY_MAP = {
   'Генетика': { url: '../napravleniya/genetika.html', icon: 'fa-dna' },
   'Онкогенетика': { url: '../napravleniya/genetika.html', icon: 'fa-dna' },
   'Гериатрия': { url: '../napravleniya/geriatriya.html', icon: 'fa-person-cane' },
-  'Педиатрия': { url: '../napravleniya/pediatriya.html', icon: 'fa-baby' },
+  'Дерматология': { url: '../napravleniya/dermatologiya.html', icon: 'fa-hand-dots' },
+  'ЛОР': { url: '../napravleniya/lor.html', icon: 'fa-ear-listen' },
+  'Отоларингология': { url: '../napravleniya/lor.html', icon: 'fa-ear-listen' },
+  'Проктология': { url: '../napravleniya/proktologiya.html', icon: 'fa-stethoscope' },
+  'Стоматология': { url: '../napravleniya/stomatologiya.html', icon: 'fa-tooth' },
+  'Терапия': { url: '../napravleniya/terapiya.html', icon: 'fa-stethoscope' },
+  'Эндокринология': { url: '../napravleniya/endokrinologiya.html', icon: 'fa-droplet' },
   'Хирургическая гастроэнтерология': { url: '../napravleniya/gastroenterologiya.html', icon: 'fa-stomach' },
   'Детская гастроэнтерология': { url: '../napravleniya/gastroenterologiya.html', icon: 'fa-stomach' },
   'Детская гематология': { url: '../napravleniya/gematologiya.html', icon: 'fa-droplet' },
@@ -60,6 +66,28 @@ const SPECIALTY_MAP = {
   'Эндоскопия': { url: '../napravleniya/gastroenterologiya.html', icon: 'fa-stomach' },
   'Детская аллергология': { url: '../napravleniya/allergologiya.html', icon: 'fa-lungs' },
   'Психогериатрия': { url: '../napravleniya/geriatriya.html', icon: 'fa-person-cane' }
+};
+
+// Надёжный маппинг направление-slug -> страница (как в frontend-загрузчиках).
+// Приоритетный источник связи врач↔направление (treatment_slugs из БД/pivot).
+const TREATMENT_SLUG_MAP = {
+  'allergologiya':      { url: '../napravleniya/allergologiya.html',      icon: 'fa-lungs',       name: 'Аллергология и иммунология' },
+  'gastroenterologiya': { url: '../napravleniya/gastroenterologiya.html', icon: 'fa-stomach',     name: 'Гастроэнтерология' },
+  'gematologiya':       { url: '../napravleniya/gematologiya.html',       icon: 'fa-droplet',     name: 'Гематология' },
+  'genetika':           { url: '../napravleniya/genetika.html',           icon: 'fa-dna',         name: 'Генетика' },
+  'geriatriya':         { url: '../napravleniya/geriatriya.html',         icon: 'fa-person-cane', name: 'Гериатрия' },
+  'ginekologiya':       { url: '../napravleniya/ginekologiya.html',       icon: 'fa-venus',       name: 'Гинекология' },
+  'kardiologiya':       { url: '../napravleniya/kardiologiya.html',       icon: 'fa-heart-pulse', name: 'Кардиология' },
+  'nevrologiya':        { url: '../napravleniya/nevrologiya.html',        icon: 'fa-brain',       name: 'Неврология' },
+  'ortopediya':         { url: '../napravleniya/ortopediya.html',         icon: 'fa-bone',        name: 'Ортопедия' },
+  'urologiya':          { url: '../napravleniya/urologiya.html',          icon: 'fa-mars',        name: 'Урология' },
+  'onkologiya':         { url: '../onkologiya.html',                      icon: 'fa-ribbon',      name: 'Онкология' },
+  'dermatologiya':      { url: '../napravleniya/dermatologiya.html',      icon: 'fa-hand-dots',   name: 'Дерматология' },
+  'lor':                { url: '../napravleniya/lor.html',                icon: 'fa-ear-listen',  name: 'ЛОР' },
+  'proktologiya':       { url: '../napravleniya/proktologiya.html',       icon: 'fa-stethoscope', name: 'Проктология' },
+  'stomatologiya':      { url: '../napravleniya/stomatologiya.html',      icon: 'fa-tooth',       name: 'Стоматология' },
+  'terapiya':           { url: '../napravleniya/terapiya.html',           icon: 'fa-stethoscope', name: 'Терапия' },
+  'endokrinologiya':    { url: '../napravleniya/endokrinologiya.html',    icon: 'fa-droplet',     name: 'Эндокринология' }
 };
 
 function normalizeSlug(value) {
@@ -101,6 +129,7 @@ function sanitizeDoctor(raw) {
     tags: parseCsv(raw?.tags),
     languages: parseCsv(raw?.languages),
     online_consultation: !!raw?.online_consultation,
+    treatment_slugs: parseCsv(raw?.treatment_slugs).map(s => s.toLowerCase()),
     seo_title: String(raw?.seo_title || '').trim(),
     seo_description: String(raw?.seo_description || '').trim(),
     seo_og_title: String(raw?.seo_og_title || '').trim(),
@@ -111,11 +140,22 @@ function sanitizeDoctor(raw) {
   };
 }
 
-function buildDoctorDirectionsHtml(specialty) {
-  const specs = parseCsv(specialty);
+function buildDoctorDirectionsHtml(specialty, treatmentSlugs = []) {
   const used = new Set();
   const items = [];
-  specs.forEach(spec => {
+
+  // 1) ПРИОРИТЕТ: связь через treatment_slugs (надёжный источник из БД/pivot).
+  (treatmentSlugs || []).forEach(slug => {
+    const key = String(slug || '').trim().toLowerCase();
+    const mapped = TREATMENT_SLUG_MAP[key];
+    if (mapped && !used.has(mapped.url)) {
+      used.add(mapped.url);
+      items.push(`<a href="${mapped.url}" class="doctor-directions__item"><i class="fas ${mapped.icon}"></i> ${escapeHtml(mapped.name)}</a>`);
+    }
+  });
+
+  // 2) Fallback/дополнение по названию специальности (старая логика).
+  parseCsv(specialty).forEach(spec => {
     const mapped = SPECIALTY_MAP[spec];
     if (mapped) {
       if (used.has(mapped.url)) return;
@@ -128,6 +168,7 @@ function buildDoctorDirectionsHtml(specialty) {
       items.push(`<span class="doctor-directions__item"><i class="fas fa-stethoscope"></i> ${escapeHtml(spec)}</span>`);
     }
   });
+
   return items.join('') || '<span class="doctor-directions__item"><i class="fas fa-stethoscope"></i> Общая консультация</span>';
 }
 
@@ -165,7 +206,7 @@ function buildDoctorStaticPageHtml(rawDoctor) {
   const ogDescription = doctor.seo_og_description || metaDescription;
   const ogImage = doctor.seo_og_image || doctor.photo_url;
   const descriptionHtml = buildDoctorDescriptionHtml(doctor.description);
-  const directionHtml = buildDoctorDirectionsHtml(doctor.specialty);
+  const directionHtml = buildDoctorDirectionsHtml(doctor.specialty, doctor.treatment_slugs);
 
   const tagsHtml = doctor.tags.length
     ? doctor.tags.map(tag => `<span class="doctor-profile__tag">${escapeHtml(tag)}</span>`).join('')
