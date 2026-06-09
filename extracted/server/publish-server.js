@@ -26,6 +26,7 @@ const ADMIN_PUBLISH_TOKEN = process.env.ADMIN_PUBLISH_TOKEN || '';
 const DEFAULT_SITE_BASE_URL = (process.env.SITE_BASE_URL || 'https://taurus-medical.com').replace(/\/$/, '');
 const ADMIN_AUTH_SECRET = process.env.ADMIN_AUTH_SECRET || 'taurus-admin-auth-secret';
 const ADMIN_AUTH_TTL_SEC = Number(process.env.ADMIN_AUTH_TTL_SEC || 8 * 60 * 60);
+const INTERNAL_ACCESS_TOKEN = process.env.INTERNAL_ACCESS_TOKEN || 'taurus-internal';
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const DOCTORS_DIR = path.join(PROJECT_ROOT, 'vrachi');
@@ -458,7 +459,7 @@ async function fetchDoctorById(id) {
 
 async function fetchTableRows(table, limit = 1000) {
   const url = `${TABLES_API_BASE}/${encodeURIComponent(table)}?limit=${limit}`;
-  const response = await fetch(url);
+  const response = await fetch(url, { headers: { 'x-internal-access': INTERNAL_ACCESS_TOKEN } });
   if (!response.ok) {
     throw new Error(`${table} fetch failed: HTTP ${response.status}`);
   }
@@ -929,6 +930,195 @@ async function handleTreatmentDelete(req, res, treatmentId) {
   }
 }
 
+function escapeHtml(text) {
+  return String(text == null ? '' : text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+async function getTelegramSettings() {
+  try {
+    const settings = await fetchTableRows('site_settings', 500);
+    const map = {};
+    for (const item of settings) {
+      const key = String(item?.key || '').trim();
+      if (key) map[key] = String(item?.value == null ? '' : item.value).trim();
+    }
+    return {
+      botToken: map['telegram_bot_token'] || '',
+      chatId: map['telegram_chat_id'] || ''
+    };
+  } catch (e) {
+    return { botToken: '', chatId: '' };
+  }
+}
+
+const FORM_TYPE_LABELS = {
+  consultation: 'Консультация',
+  second_opinion: 'Второе мнение',
+  callback: 'Обратный звонок',
+  appointment: 'Запись на приём',
+  diagnostics: 'Диагностика',
+  treatment: 'Лечение'
+};
+
+async function sendTelegramNotification(submission) {
+  const { botToken, chatId } = await getTelegramSettings();
+  if (!botToken || !chatId) {
+    return { sent: false, reason: 'telegram_not_configured' };
+  }
+
+  const typeLabel = FORM_TYPE_LABELS[submission.form_type] || submission.form_type || 'Заявка';
+  const lines = [
+    '🔔 <b>Новая заявка с сайта</b>',
+    '',
+    `<b>Тип:</b> ${escapeHtml(typeLabel)}`,
+    `<b>Имя:</b> ${escapeHtml(submission.name || '—')}`,
+    `<b>Телефон:</b> ${escapeHtml(submission.phone || '—')}`
+  ];
+  if (submission.email) lines.push(`<b>Email:</b> ${escapeHtml(submission.email)}`);
+  if (submission.message) {
+    lines.push('', '<b>Сообщение:</b>', escapeHtml(submission.message));
+  }
+  if (submission.page_url) lines.push('', `<b>Страница:</b> ${escapeHtml(submission.page_url)}`);
+  const utmParts = [];
+  if (submission.utm_source) utmParts.push(`source=${submission.utm_source}`);
+  if (submission.utm_medium) utmParts.push(`medium=${submission.utm_medium}`);
+  if (submission.utm_campaign) utmParts.push(`campaign=${submission.utm_campaign}`);
+  if (utmParts.length) lines.push('', `<b>UTM:</b> ${escapeHtml(utmParts.join(' | '))}`);
+
+  const text = lines.join('\n');
+
+  try {
+    const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true })
+    });
+    const tgPayload = await tgRes.json().catch(() => ({}));
+    if (!tgRes.ok || tgPayload?.ok === false) {
+      return { sent: false, reason: tgPayload?.description || `HTTP ${tgRes.status}` };
+    }
+    return { sent: true };
+  } catch (e) {
+    return { sent: false, reason: e.message || 'telegram_request_failed' };
+  }
+}
+
+// Authenticated settings read/write for the admin panel.
+// Reads secrets via the internal-access header so the public /tables API can stay redacted.
+async function handleAdminSettingsGet(req, res) {
+  try {
+    const settings = await fetchTableRows('site_settings', 500);
+    const map = {};
+    for (const item of settings) {
+      const key = String(item?.key || '').trim();
+      if (!key) continue;
+      map[key] = { key, value: String(item?.value == null ? '' : item.value), id: item?.id || '' };
+    }
+    sendJson(res, 200, { ok: true, settings: map });
+  } catch (e) {
+    sendJson(res, 500, { ok: false, error: e.message || 'Settings read failed' });
+  }
+}
+
+async function handleAdminSettingsSave(req, res) {
+  try {
+    const body = await readJsonBody(req);
+    const updates = Array.isArray(body?.updates) ? body.updates : [];
+    if (!updates.length) {
+      sendJson(res, 400, { ok: false, error: 'No updates provided' });
+      return;
+    }
+
+    const existing = await fetchTableRows('site_settings', 500);
+    const byKey = {};
+    for (const item of existing) {
+      const key = String(item?.key || '').trim();
+      if (key) byKey[key] = item;
+    }
+
+    for (const u of updates) {
+      const key = String(u?.key || '').trim();
+      if (!key) continue;
+      let value = u?.value == null ? '' : String(u.value);
+
+      // Map plaintext password to a hash; never store the raw password.
+      if (key === 'admin_password') {
+        if (!value) continue; // empty → don't change password
+        const hash = createPasswordHash(value);
+        const hashRec = byKey['admin_password_hash'];
+        if (hashRec?.id) {
+          await patchTableRecord('site_settings', hashRec.id, { value: hash });
+        } else {
+          await createTableRecord('site_settings', { key: 'admin_password_hash', value: hash, description: 'Hashed admin password (scrypt)' });
+        }
+        continue;
+      }
+
+      const rec = byKey[key];
+      if (rec?.id) {
+        await patchTableRecord('site_settings', rec.id, { value });
+      } else {
+        await createTableRecord('site_settings', { key, value });
+      }
+    }
+
+    sendJson(res, 200, { ok: true });
+  } catch (e) {
+    sendJson(res, 500, { ok: false, error: e.message || 'Settings save failed' });
+  }
+}
+
+async function handlePublicFormSubmit(req, res) {
+  try {
+    const body = await readJsonBody(req);
+    const name = String(body?.name || '').trim();
+    const phone = String(body?.phone || '').trim();
+
+    if (!name || !phone) {
+      sendJson(res, 400, { ok: false, error: 'Имя и телефон обязательны' });
+      return;
+    }
+
+    const submission = {
+      form_type: String(body?.form_type || 'consultation').trim().slice(0, 64) || 'consultation',
+      name: name.slice(0, 200),
+      phone: phone.slice(0, 64),
+      email: String(body?.email || '').trim().slice(0, 200),
+      message: String(body?.message || '').trim().slice(0, 4000),
+      page_url: String(body?.page_url || '').trim().slice(0, 500),
+      utm_source: String(body?.utm_source || '').trim().slice(0, 200),
+      utm_medium: String(body?.utm_medium || '').trim().slice(0, 200),
+      utm_campaign: String(body?.utm_campaign || '').trim().slice(0, 200),
+      utm_content: String(body?.utm_content || '').trim().slice(0, 200),
+      utm_term: String(body?.utm_term || '').trim().slice(0, 200),
+      status: 'new'
+    };
+
+    let saved = null;
+    try {
+      saved = await createTableRecord('form_submissions', submission);
+    } catch (e) {
+      sendJson(res, 502, { ok: false, error: 'Не удалось сохранить заявку' });
+      return;
+    }
+
+    // Telegram is best-effort; submission is already saved in admin
+    const telegram = await sendTelegramNotification(submission);
+
+    sendJson(res, 200, {
+      ok: true,
+      id: saved?.id || '',
+      telegram_sent: !!telegram.sent,
+      telegram_reason: telegram.sent ? undefined : telegram.reason
+    });
+  } catch (e) {
+    sendJson(res, 400, { ok: false, error: e.message || 'Bad request' });
+  }
+}
+
 function createPublishServer() {
   return http.createServer(async (req, res) => {
     if (req.method === 'OPTIONS') {
@@ -953,6 +1143,15 @@ function createPublishServer() {
       return;
     }
 
+    if (req.method === 'GET' && url.pathname === '/admin/settings') {
+      if (!assertAuthorized(req)) {
+        sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+        return;
+      }
+      await handleAdminSettingsGet(req, res);
+      return;
+    }
+
     if (req.method === 'POST' && url.pathname === '/admin/auth/login') {
       await handleAdminAuthLogin(req, res);
       return;
@@ -960,6 +1159,12 @@ function createPublishServer() {
 
     if (req.method === 'POST' && url.pathname === '/admin/auth/logout') {
       handleAdminAuthLogout(req, res);
+      return;
+    }
+
+    // Public lead submission endpoint (no auth) — saves to admin + sends Telegram server-side
+    if (req.method === 'POST' && (url.pathname === '/public/submit-form' || url.pathname === '/admin/public/submit-form')) {
+      await handlePublicFormSubmit(req, res);
       return;
     }
 
@@ -993,6 +1198,11 @@ function createPublishServer() {
 
       if (url.pathname === '/admin/seo/static-statuses') {
         await handleStaticStatusBatch(req, res);
+        return;
+      }
+
+      if (url.pathname === '/admin/settings') {
+        await handleAdminSettingsSave(req, res);
         return;
       }
     }
